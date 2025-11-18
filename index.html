@@ -1656,7 +1656,7 @@
     </div>
 
     <!-- BOTÃO FLUTUANTE DE DEBUG -->
-    <button id="btnDebug" onclick="toggleDebug()" style="position: fixed; top: 23px; left: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 10px 14px; border-radius: 50px; cursor: pointer; font-size: 13px; font-weight: bold; box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5); z-index: 4999; transition: all 0.3s;">
+    <button id="btnDebug" onclick="toggleDebug()" style="position: fixed; top: 23px; left: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 10px 14px; border-radius: 50px; cursor: pointer; font-size: 13px; font-weight: bold; box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5); z-index: 4999; transition: all 0.3s; display: none;">  <!-- o "display: none" é responsável por desativar o sistema Debug, para reativar é só removê-lo -->
         🐛 DEBUG
     </button>
     <div class="modal-limpar" id="modalLimpar">
@@ -2385,11 +2385,23 @@ function voltarMes() {
                 // Converter Map para array E CONSOLIDAR
                 contasMap.forEach(conta => {
                     const pessoasConsolidadas = consolidarPessoasPorNome(conta.pessoas);
+                    
+                    // SEMPRE adicionar a conta, mesmo sem pessoas
                     contas.push({
                         ...conta,
                         pessoas: pessoasConsolidadas
                     });
                 });
+                
+                // CRÍTICO: Salvar o novo mês criado
+                todasContas[chave] = JSON.parse(JSON.stringify(contas));
+                localStorage.setItem('todasContas', JSON.stringify(todasContas));
+                
+                if (contas.length > 0) {
+                    adicionarLog(`   ✅ Novo mês ${chave} criado e salvo com ${contas.length} contas`, 'success');
+                } else {
+                    adicionarLog(`   ℹ️ Novo mês ${chave} criado vazio`, 'info');
+                }
             }
         }
 function consolidarPessoasPorNome(pessoas) {
@@ -2537,9 +2549,15 @@ function consolidarPessoasPorNome(pessoas) {
         function salvarNoStorage() {
             const chave = getChaveMes();
             
+            adicionarLog(`💾 salvarNoStorage() INICIADA - Mês: ${chave}`, 'info');
+            adicionarLog(`   Contas a salvar: ${contas.length}`, 'info');
+            
             // CONSOLIDAR antes de salvar
             const contasConsolidadas = contas.map(conta => {
                 const pessoasConsolidadas = consolidarPessoasPorNome(conta.pessoas);
+                
+                adicionarLog(`   Conta: ${conta.nome} - Pessoas: ${pessoasConsolidadas.length}`, 'info');
+                
                 return {
                     ...conta,
                     pessoas: pessoasConsolidadas
@@ -2554,6 +2572,8 @@ function consolidarPessoasPorNome(pessoas) {
                 ano: mesAtual.getFullYear(),
                 mes: mesAtual.getMonth()
             }));
+            
+            adicionarLog(`✅ salvarNoStorage() CONCLUÍDA`, 'success');
         }
         function iniciarLongPress(contaId, pessoaIndex, event) {
             if (event && event.type === 'touchstart') {
@@ -3100,7 +3120,66 @@ function verificarEMigrarVersao() {
             adicionarLog(`   Parcelas já pagas: ${parcelasJaPagas}`, 'info');
             adicionarLog(`   Pessoas recebidas: ${pessoasAtualizadas.map(p => p.nome).join(', ')}`, 'info');
             
-            // Percorrer os meses anteriores (quantos forem necessários para as parcelas já pagas)
+            // PRIMEIRO: Limpar TODOS os meses anteriores ao atual (até 12 meses atrás)
+            pessoasAtualizadas.forEach(pessoaAtualizada => {
+                if (pessoaAtualizada.compras && pessoaAtualizada.compras.length > 0) {
+                    pessoaAtualizada.compras.forEach(compra => {
+                        // Limpar até 12 meses anteriores para garantir limpeza total
+                        for (let i = 1; i <= 12; i++) {
+                            const dataRetroativa = new Date(anoAtual, mesAtualNum - 1 - i, 1);
+                            const anoRetro = dataRetroativa.getFullYear();
+                            const mesRetro = dataRetroativa.getMonth() + 1;
+                            const chaveRetro = `${anoRetro}-${String(mesRetro).padStart(2, '0')}`;
+                            
+                            if (todasContas[chaveRetro]) {
+                                const contasMesRetro = todasContas[chaveRetro];
+                                const contaRetro = contasMesRetro.find(c => c.nome === nomeConta);
+                                
+                                if (contaRetro) {
+                                    const qtdAntes = contaRetro.pessoas.length;
+                                    
+                                    // Remover esta compra específica de todas as pessoas com este nome
+                                    contaRetro.pessoas = contaRetro.pessoas.filter(p => {
+                                        if (p.nome !== pessoaAtualizada.nome) return true;
+                                        
+                                        // Se tem compras, filtrar apenas a compra específica
+                                        if (p.compras && p.compras.length > 0) {
+                                            p.compras = p.compras.filter(c => c.idUnico !== compra.idUnico);
+                                            
+                                            // Se ainda tem compras, recalcular valores e manter
+                                            if (p.compras.length > 0) {
+                                                p.valor = p.compras.reduce((sum, c) => sum + (c.valorParcela || 0), 0);
+                                                p.valorTotal = p.compras.reduce((sum, c) => sum + (c.valorTotal || 0), 0);
+                                                return true;
+                                            }
+                                        }
+                                        
+                                        // Se não tem compras ou ficou vazio, remover
+                                        return false;
+                                    });
+                                    
+                                    if (contaRetro.pessoas.length < qtdAntes) {
+                                        adicionarLog(`   🗑️ Mês ${chaveRetro}: ${qtdAntes - contaRetro.pessoas.length} pessoa(s) removida(s)`, 'warning');
+                                    }
+                                    
+                                    // Se a conta ficou sem pessoas, remover a conta também
+                                    if (contaRetro.pessoas.length === 0) {
+                                        const indexConta = contasMesRetro.findIndex(c => c.nome === nomeConta);
+                                        if (indexConta !== -1) {
+                                            contasMesRetro.splice(indexConta, 1);
+                                            adicionarLog(`   🗑️ Mês ${chaveRetro}: Conta removida (sem pessoas)`, 'warning');
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+            });
+            
+            adicionarLog(`   ✅ Limpeza completa de TODOS os meses retroativos concluída`, 'success');
+            
+            // SEGUNDO: Adicionar parcelas retroativas APENAS nos meses necessários
             for (let i = 1; i <= parcelasJaPagas; i++) {
                 const dataRetroativa = new Date(anoAtual, mesAtualNum - 1 - i, 1);
                 const anoRetro = dataRetroativa.getFullYear();
@@ -3111,7 +3190,8 @@ function verificarEMigrarVersao() {
                 if (!todasContas[chaveRetro]) {
                     todasContas[chaveRetro] = [];
                 }
-                adicionarLog(`📅 Processando mês: ${chaveRetro}`, 'info');
+                
+                adicionarLog(`📅 Processando mês retroativo: ${chaveRetro}`, 'info');
                 
                 const contasMesRetro = todasContas[chaveRetro];
                 let contaRetro = contasMesRetro.find(c => c.nome === nomeConta);
@@ -3127,63 +3207,77 @@ function verificarEMigrarVersao() {
                             pago: false
                         };
                         contasMesRetro.push(contaRetro);
+                        adicionarLog(`   ✨ Conta criada no mês ${chaveRetro}`, 'success');
                     }
                 }
                 
                 if (contaRetro) {
-                    // Adicionar as pessoas com as parcelas retroativas e marcá-las como pagas
                     pessoasAtualizadas.forEach(pessoaAtualizada => {
-                    adicionarLog(`   👤 Processando pessoa: ${pessoaAtualizada.nome}`, 'info');
+                        adicionarLog(`   👤 Processando pessoa: ${pessoaAtualizada.nome}`, 'info');
+                        
                         if (pessoaAtualizada.compras && pessoaAtualizada.compras.length > 0) {
                             pessoaAtualizada.compras.forEach(compra => {
                                 const match = compra.parcelas ? compra.parcelas.match(/(\d+)\/(\d+)/) : null;
                                 
                                 if (match) {
-                                    const parcelaAtual = parseInt(match[1]);
+                                    const parcelaBase = compra._parcelaBase || parseInt(match[1]);
                                     const totalParcelas = parseInt(match[2]);
                                     
                                     // Calcular qual parcela seria neste mês retroativo
-                                    const parcelaRetro = parcelaAtual - i;
+                                    const parcelaRetro = parcelaBase - i;
                                     
-                                    // Se a parcela retroativa é válida (maior que 0)
+                                    adicionarLog(`      📊 Parcela calculada: ${parcelaRetro}/${totalParcelas} (base: ${parcelaBase}, retroativo: ${i})`, 'info');
+                                    
+                                    // Se a parcela retroativa é válida (maior que 0 e menor/igual ao total)
                                     if (parcelaRetro > 0 && parcelaRetro <= totalParcelas) {
-                                        // Verificar se já existe esta compra para ESTA PESSOA especificamente
+                                        // Verificar se já existe EXATAMENTE esta compra neste mês
                                         const pessoaJaExiste = contaRetro.pessoas.find(p => p.nome === pessoaAtualizada.nome);
                                         
+                                        let compraJaExiste = false;
                                         if (pessoaJaExiste && pessoaJaExiste.compras) {
-                                            // Pessoa existe - verificar se a compra específica já existe
-                                            const compraJaExiste = pessoaJaExiste.compras.some(c => 
-                                                c.idUnico === compra.idUnico || 
-                                                (c.nome === compra.nome && c.dataCompra === compra.dataCompra)
+                                            compraJaExiste = pessoaJaExiste.compras.some(c => 
+                                                c.idUnico === compra.idUnico && c.parcelas === `${parcelaRetro}/${totalParcelas}`
                                             );
-                                            
-                                            if (!compraJaExiste) {
-                                                adicionarLog(`      ➕ Adicionando compra "${compra.nome}" - Parcela ${parcelaRetro}/${totalParcelas}`, 'success');
-                                                // Adicionar compra à pessoa existente
+                                        }
+                                        
+                                        if (!compraJaExiste) {
+                                            if (pessoaJaExiste) {
+                                                // Pessoa existe - adicionar compra
                                                 pessoaJaExiste.compras.push({
                                                     ...compra,
-                                                    parcelas: `${parcelaRetro}/${totalParcelas}`
+                                                    parcelas: `${parcelaRetro}/${totalParcelas}`,
+                                                    _parcelaBase: parcelaBase,
+                                                    _mesBase: compra._mesBase || chaveAtual
                                                 });
                                                 
-                                                // Recalcular valor da pessoa
+                                                // Recalcular valores
                                                 pessoaJaExiste.valor = pessoaJaExiste.compras.reduce((sum, c) => sum + (c.valorParcela || 0), 0);
                                                 pessoaJaExiste.valorTotal = pessoaJaExiste.compras.reduce((sum, c) => sum + (c.valorTotal || 0), 0);
+                                                
+                                                adicionarLog(`      ➕ Compra adicionada à pessoa existente - Parcela ${parcelaRetro}/${totalParcelas}`, 'success');
+                                            } else {
+                                                // Pessoa não existe - criar nova
+                                                contaRetro.pessoas.push({
+                                                    nome: pessoaAtualizada.nome,
+                                                    valor: compra.valorParcela,
+                                                    valorTotal: compra.valorTotal,
+                                                    parcelas: `${parcelaRetro}/${totalParcelas}`,
+                                                    compras: [{
+                                                        ...compra,
+                                                        parcelas: `${parcelaRetro}/${totalParcelas}`,
+                                                        _parcelaBase: parcelaBase,
+                                                        _mesBase: compra._mesBase || chaveAtual
+                                                    }],
+                                                    pago: true // Marcar como pago pois são parcelas JÁ PAGAS
+                                                });
+                                                
+                                                adicionarLog(`      ✨ Nova pessoa criada - Parcela ${parcelaRetro}/${totalParcelas} MARCADA COMO PAGA`, 'success');
                                             }
                                         } else {
-                                            // Pessoa não existe - criar nova entrada
-                                            adicionarLog(`      ✨ Criando nova entrada para "${pessoaAtualizada.nome}" - Parcela ${parcelaRetro}/${totalParcelas}`, 'success');
-                                            contaRetro.pessoas.push({
-                                                nome: pessoaAtualizada.nome,
-                                                valor: compra.valorParcela,
-                                                valorTotal: compra.valorTotal,
-                                                parcelas: `${parcelaRetro}/${totalParcelas}`,
-                                                compras: [{
-                                                    ...compra,
-                                                    parcelas: `${parcelaRetro}/${totalParcelas}`
-                                                }],
-                                                pago: true // Marcar como pago pois são parcelas já pagas
-                                            });
+                                            adicionarLog(`      ⏭️ Compra já existe neste mês, pulando...`, 'info');
                                         }
+                                    } else {
+                                        adicionarLog(`      ⚠️ Parcela ${parcelaRetro} fora do intervalo válido (1-${totalParcelas})`, 'warning');
                                     }
                                 }
                             });
@@ -3191,12 +3285,15 @@ function verificarEMigrarVersao() {
                     });
                     
                     // Verificar se todas as pessoas estão pagas para marcar a conta como paga
-                    const todasPagas = contaRetro.pessoas.every(p => p.pago);
-                    if (todasPagas && contaRetro.pessoas.length > 0) {
+                    const todasPagas = contaRetro.pessoas.length > 0 && contaRetro.pessoas.every(p => p.pago);
+                    if (todasPagas) {
                         contaRetro.pago = true;
+                        adicionarLog(`   ✅ Conta ${nomeConta} marcada como paga no mês ${chaveRetro}`, 'success');
                     }
                 }
             }
+            
+            adicionarLog(`✅ adicionarCompraEmAndamentoRetroativa() CONCLUÍDA`, 'importante');
             
             // Salvar alterações
             localStorage.setItem('todasContas', JSON.stringify(todasContas));
@@ -3376,19 +3473,36 @@ function verificarEMigrarVersao() {
             localStorage.setItem('todasContas', JSON.stringify(todasContas));
         }
         function excluirCompraDeTodosOsMeses(nomeConta, nomePessoa, idUnicoCompra) {
+            adicionarLog(`🗑️ excluirCompraDeTodosOsMeses INICIADA`, 'importante');
+            adicionarLog(`   Conta: ${nomeConta}, Pessoa: ${nomePessoa}`, 'info');
+            adicionarLog(`   ID da compra: ${idUnicoCompra}`, 'info');
+            
+            let mesesProcessados = 0;
+            let comprasRemovidas = 0;
+            let pessoasRemovidas = 0;
+            
             // Percorrer TODOS os meses (incluindo meses anteriores com parcelas pagas)
             Object.keys(todasContas).forEach(chaveMes => {
                 const contasMes = todasContas[chaveMes];
                 const contaEncontrada = contasMes.find(c => c.nome === nomeConta);
                 
                 if (contaEncontrada) {
+                    mesesProcessados++;
+                    
                     // Usar um array para armazenar índices a remover (de trás para frente)
                     const pessoasParaRemover = [];
                     
                     contaEncontrada.pessoas.forEach((pessoa, pessoaIdx) => {
                         if (pessoa.nome === nomePessoa && pessoa.compras) {
+                            const qtdComprasAntes = pessoa.compras.length;
+                            
                             // Filtrar removendo a compra
                             pessoa.compras = pessoa.compras.filter(c => c.idUnico !== idUnicoCompra);
+                            
+                            if (pessoa.compras.length < qtdComprasAntes) {
+                                comprasRemovidas++;
+                                adicionarLog(`      Mês ${chaveMes}: Compra removida`, 'info');
+                            }
                             
                             // Recalcular valor da pessoa
                             if (pessoa.compras.length > 0) {
@@ -3404,6 +3518,8 @@ function verificarEMigrarVersao() {
                     // Remover pessoas sem compras (de trás para frente para não afetar índices)
                     for (let i = pessoasParaRemover.length - 1; i >= 0; i--) {
                         contaEncontrada.pessoas.splice(pessoasParaRemover[i], 1);
+                        pessoasRemovidas++;
+                        adicionarLog(`      Mês ${chaveMes}: Pessoa removida (sem compras)`, 'warning');
                     }
                     
                     // Se a conta ficou sem pessoas, recalcular status de pagamento
@@ -3416,37 +3532,19 @@ function verificarEMigrarVersao() {
                     }
                 }
                 
-                // Limpar contas que ficaram completamente vazias
-                todasContas[chaveMes] = todasContas[chaveMes].filter(c => 
-                    c.nome !== nomeConta || c.pessoas.length > 0
-                );
+                // NÃO remover contas vazias - apenas deixar sem pessoas
+                // (contas devem permanecer mesmo sem parcelas ativas)
             });
             
-            // Limpar pessoas com valor zero ou sem compras
-            adicionarLog(`   🧹 Limpando pessoas vazias após retroativo`, 'warning');
-            
-            for (let i = 1; i <= parcelasJaPagas; i++) {
-                const dataRetroativa = new Date(anoAtual, mesAtualNum - 1 - i, 1);
-                const anoRetro = dataRetroativa.getFullYear();
-                const mesRetro = dataRetroativa.getMonth() + 1;
-                const chaveRetro = `${anoRetro}-${String(mesRetro).padStart(2, '0')}`;
-                
-                if (todasContas[chaveRetro]) {
-                    const contasMesRetro = todasContas[chaveRetro];
-                    const contaRetro = contasMesRetro.find(c => c.nome === nomeConta);
-                    
-                    if (contaRetro) {
-                        contaRetro.pessoas = contaRetro.pessoas.filter(p => {
-                            const temValor = p.valor > 0;
-                            const temCompras = p.compras && p.compras.length > 0;
-                            return temValor || temCompras;
-                        });
-                    }
-                }
-            }
+            adicionarLog(`   📊 Estatísticas:`, 'info');
+            adicionarLog(`      Meses processados: ${mesesProcessados}`, 'info');
+            adicionarLog(`      Compras removidas: ${comprasRemovidas}`, 'info');
+            adicionarLog(`      Pessoas removidas: ${pessoasRemovidas}`, 'info');
             
             // Salvar alterações
             localStorage.setItem('todasContas', JSON.stringify(todasContas));
+            adicionarLog(`   ✅ Alterações salvas no localStorage`, 'success');
+            adicionarLog(`✅ excluirCompraDeTodosOsMeses CONCLUÍDA`, 'importante');
         }
         function propagarComprasParaTodosMeses(nomeConta, pessoasAtualizadas) {
             const chaveAtual = getChaveMes();
@@ -4364,6 +4462,7 @@ function adicionarNovaCompra(contaId) {
                     parcelas: parcelasTexto,
                     dataCompra: new Date().toLocaleDateString('pt-BR'),
                     idUnico: dataCompraAtual + '_' + nomeCompra,
+                    observacoes: observacoes,
                     _parcelaBase: parcelaBase,
                     _mesBase: mesBase
                 }],
@@ -4393,6 +4492,118 @@ function adicionarNovaCompra(contaId) {
             
             pessoasTemp.splice(index, 1);
             renderizarPessoasForm();
+        }
+        function excluirPessoaECompras(index) {
+            const pessoaRemovida = pessoasTemp[index];
+            
+            adicionarLog(`🗑️ INICIANDO exclusão via modal de edição`, 'importante');
+            adicionarLog(`   Pessoa: ${pessoaRemovida.nome}`, 'info');
+            
+            // Verificar se está editando uma conta
+            if (contaEditando) {
+                // Verificar se tem compras
+                if (pessoaRemovida.compras && pessoaRemovida.compras.length > 0) {
+                    const compra = pessoaRemovida.compras[0];
+                    
+                    adicionarLog(`   Compra encontrada: ${compra.nome}`, 'info');
+                    adicionarLog(`   ID Único: ${compra.idUnico}`, 'info');
+                    
+                    const confirmar = confirm(
+                        '⚠️ ATENÇÃO!\n\n' +
+                        `Deseja excluir "${compra.nome}" de TODOS OS MESES?\n\n` +
+                        'Esta ação removerá todas as parcelas desta compra em todos os meses.\n\n' +
+                        'Continuar?'
+                    );
+                    
+                    if (!confirmar) {
+                        adicionarLog(`   ❌ Exclusão cancelada pelo usuário`, 'warning');
+                        return;
+                    }
+                    
+                    adicionarLog(`   ✅ Confirmado, iniciando exclusão de todos os meses...`, 'success');
+                    
+                    // Excluir de todos os meses usando a mesma lógica do clique longo
+                    excluirCompraDeTodosOsMeses(contaEditando.nome, pessoaRemovida.nome, compra.idUnico);
+                    
+                    adicionarLog(`   ✅ excluirCompraDeTodosOsMeses() executada`, 'success');
+                    
+                    // Remover do pessoasTemp
+                    pessoasTemp.splice(index, 1);
+                    adicionarLog(`   ✅ Removido do pessoasTemp`, 'success');
+                    
+                    // Atualizar a conta no array contas do mês atual
+                    const indexContaAtual = contas.findIndex(c => c.id === contaEditando.id);
+                    if (indexContaAtual !== -1) {
+                        const pessoaNaContaAtual = contas[indexContaAtual].pessoas.find(p => p.nome === pessoaRemovida.nome);
+                        if (pessoaNaContaAtual) {
+                            pessoaNaContaAtual.compras = pessoaNaContaAtual.compras.filter(c => c.idUnico !== compra.idUnico);
+                            
+                            // Se não tem mais compras, remover a pessoa da conta
+                            if (pessoaNaContaAtual.compras.length === 0) {
+                                contas[indexContaAtual].pessoas = contas[indexContaAtual].pessoas.filter(p => p.nome !== pessoaRemovida.nome);
+                                adicionarLog(`   ✅ Pessoa removida da conta atual (sem compras)`, 'success');
+                            } else {
+                                // Recalcular valores
+                                pessoaNaContaAtual.valor = pessoaNaContaAtual.compras.reduce((sum, c) => sum + (c.valorParcela || 0), 0);
+                                pessoaNaContaAtual.valorTotal = pessoaNaContaAtual.compras.reduce((sum, c) => sum + (c.valorTotal || 0), 0);
+                                adicionarLog(`   ✅ Valores recalculados da pessoa na conta atual`, 'success');
+                            }
+                        }
+                    }
+                    
+                    // Atualizar a conta editando
+                    const pessoaNaContaEditando = contaEditando.pessoas.find(p => p.nome === pessoaRemovida.nome);
+                    if (pessoaNaContaEditando) {
+                        pessoaNaContaEditando.compras = pessoaNaContaEditando.compras.filter(c => c.idUnico !== compra.idUnico);
+                        
+                        // Se não tem mais compras, remover a pessoa da conta
+                        if (pessoaNaContaEditando.compras.length === 0) {
+                            contaEditando.pessoas = contaEditando.pessoas.filter(p => p.nome !== pessoaRemovida.nome);
+                            adicionarLog(`   ✅ Pessoa removida da contaEditando (sem compras)`, 'success');
+                        } else {
+                            // Recalcular valores
+                            pessoaNaContaEditando.valor = pessoaNaContaEditando.compras.reduce((sum, c) => sum + (c.valorParcela || 0), 0);
+                            pessoaNaContaEditando.valorTotal = pessoaNaContaEditando.compras.reduce((sum, c) => sum + (c.valorTotal || 0), 0);
+                            adicionarLog(`   ✅ Valores recalculados da pessoa na contaEditando`, 'success');
+                        }
+                    }
+                    
+                    // Salvar alterações IMEDIATAMENTE
+                    adicionarLog(`   💾 Salvando no storage...`, 'warning');
+                    salvarNoStorage();
+                    adicionarLog(`   ✅ Salvo no storage`, 'success');
+                    
+                    // Recarregar do storage para garantir consistência
+                    const dadosAtualizados = localStorage.getItem('todasContas');
+                    if (dadosAtualizados) {
+                        todasContas = JSON.parse(dadosAtualizados);
+                        adicionarLog(`   ✅ todasContas recarregado`, 'success');
+                    }
+                    
+                    // Recarregar o mês atual
+                    carregarContasMesAtual();
+                    adicionarLog(`   ✅ carregarContasMesAtual() executado`, 'success');
+                    
+                    // Renderizar apenas a lista de pessoas do formulário
+                    renderizarPessoasForm();
+                    
+                    // Renderizar as contas na tela principal
+                    renderizarContas();
+                    
+                    adicionarLog(`✅ EXCLUSÃO CONCLUÍDA COM SUCESSO!`, 'importante');
+                    
+                    alert('Compra excluída com sucesso de todos os meses! ✅\n\nO formulário permanece aberto para novas edições.');
+                } else {
+                    // Se não tem compras, usar a função normal
+                    adicionarLog(`   ⚠️ Pessoa sem compras detalhadas, usando remoção normal`, 'warning');
+                    removerPessoaTemp(index);
+                }
+            } else {
+                // Se não está editando, apenas remover do temp
+                adicionarLog(`   ℹ️ Não está editando conta, removendo apenas do temp`, 'info');
+                pessoasTemp.splice(index, 1);
+                renderizarPessoasForm();
+            }
         }
 
         function editarPessoa(index) {
@@ -4478,7 +4689,7 @@ function adicionarNovaCompra(contaId) {
             
             conteudo += '<div class="form-grupo-modal">';
             conteudo += '<label>Observações:</label>';
-            const observacoes = pessoa.observacoes || '';
+            const observacoes = (pessoa.compras && pessoa.compras[0] && pessoa.compras[0].observacoes) ? pessoa.compras[0].observacoes : (pessoa.observacoes || '');
             conteudo += `<input type="text" id="observacoesEditTemp" placeholder="Ex: Pagamento quinzenal, PIX, etc..." value="${observacoes}">`;
             conteudo += '</div>';
             
@@ -4724,15 +4935,45 @@ function adicionarNovaCompra(contaId) {
                 return;
             }
             
-            lista.innerHTML = pessoasTemp.map((p, i) => `
-                <div class="pessoa-item">
-                    <span>${p.nome} ${p.parcelas ? `(${p.parcelas})` : ''}: R$ ${p.valor.toFixed(2)}</span>
-                    <div>
-                        <button type="button" class="btn-editar-pessoa" onclick="editarPessoa(${i})">✏️</button>
-                        <button type="button" class="btn-remover" onclick="removerPessoaTemp(${i})">✕</button>
-                    </div>
-                </div>
-            `).join('');
+            lista.innerHTML = pessoasTemp.map((p, i) => {
+                // Verificar se a pessoa tem compras detalhadas
+                const temCompras = p.compras && p.compras.length > 0;
+                
+                if (temCompras && p.compras.length === 1) {
+                    // Se tem apenas 1 compra, mostrar botões de editar e excluir diretos
+                    return `
+                        <div class="pessoa-item">
+                            <span>${p.nome} ${p.parcelas ? `(${p.parcelas})` : ''}: R$ ${p.valor.toFixed(2)}</span>
+                            <div>
+                                <button type="button" class="btn-editar-pessoa" onclick="editarPessoa(${i})">✏️</button>
+                                <button type="button" class="btn-remover" onclick="excluirPessoaECompras(${i})">🗑️</button>
+                            </div>
+                        </div>
+                    `;
+                } else if (temCompras && p.compras.length > 1) {
+                    // Se tem múltiplas compras, mostrar apenas botão de editar
+                    return `
+                        <div class="pessoa-item">
+                            <span>${p.nome} ${p.parcelas ? `(${p.parcelas})` : ''}: R$ ${p.valor.toFixed(2)}</span>
+                            <div>
+                                <button type="button" class="btn-editar-pessoa" onclick="editarPessoa(${i})">✏️</button>
+                                <button type="button" class="btn-remover" onclick="removerPessoaTemp(${i})">✕</button>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    // Sem compras detalhadas, usar ✕
+                    return `
+                        <div class="pessoa-item">
+                            <span>${p.nome} ${p.parcelas ? `(${p.parcelas})` : ''}: R$ ${p.valor.toFixed(2)}</span>
+                            <div>
+                                <button type="button" class="btn-editar-pessoa" onclick="editarPessoa(${i})">✏️</button>
+                                <button type="button" class="btn-remover" onclick="removerPessoaTemp(${i})">✕</button>
+                            </div>
+                        </div>
+                    `;
+                }
+            }).join('');
         }
 
         function salvarConta(e) {
@@ -4766,6 +5007,7 @@ function adicionarNovaCompra(contaId) {
                 const tipoTransacao = document.getElementById('tipoTransacao').value;
                 const nomeCompraForm = document.getElementById('nomeCompra').value.trim();
                 const nomeCompraInicial = nomeCompraForm || (tipoTransacao === 'recebimento' ? 'Recebimento inicial' : 'Compra inicial');
+                const observacoesForm = document.getElementById('observacoes').value || '';
                 
                 const dataCompraAtual = new Date().toISOString();
                 
@@ -4780,7 +5022,8 @@ function adicionarNovaCompra(contaId) {
                         valorParcela: valorParcela,
                         parcelas: parcelasTexto,
                         dataCompra: new Date().toLocaleDateString('pt-BR'),
-                        idUnico: dataCompraAtual + '_' + nomeCompraInicial
+                        idUnico: dataCompraAtual + '_' + nomeCompraInicial,
+                        observacoes: observacoesForm
                     }],
                     pago: false
                 });
@@ -5389,6 +5632,7 @@ function adicionarNovaCompra(contaId) {
                 const valorTotal = compra.valorTotal || 0;
                 const valorParcela = compra.valorParcela || 0;
                 const parcelas = compra.parcelas || '';
+                const observacoes = compra.observacoes || '';
                 
                 totalGeral += valorTotal;
                 
@@ -5411,6 +5655,12 @@ function adicionarNovaCompra(contaId) {
                                 <div class="detalhes-compra-info-label">${labelParcela}</div>
                                 <div class="detalhes-compra-info-valor ${ehRecebimento ? 'recebimento' : ''}">R$ ${valorParcela.toFixed(2)}</div>
                             </div>
+                            ${observacoes ? `
+                            <div class="detalhes-compra-info-item" style="grid-column: 1 / -1;">
+                                <div class="detalhes-compra-info-label">📝 Observações</div>
+                                <div style="color: #666; font-size: 12px;">${observacoes}</div>
+                            </div>
+                            ` : ''}
                         </div>
                     </div>
                 `;
@@ -6070,6 +6320,11 @@ function mostrarDetalhesValor(contaId) {
         function renderizarContas() {
             const lista = document.getElementById('listaContas');
             
+            adicionarLog(`🎨 renderizarContas() - Total de contas: ${contas.length}`, 'info');
+            contas.forEach(c => {
+                adicionarLog(`   ${c.nome}: ${c.pessoas.length} pessoas`, 'info');
+            });
+            
             if (contas.length === 0) {
                 lista.innerHTML = '<p style="text-align: center; color: #999; padding: 40px;">Nenhuma conta cadastrada. Clique em "Adicionar Conta" para começar.</p>';
                 document.getElementById('totalValor').textContent = 'R$ 0,00';
@@ -6114,19 +6369,13 @@ function mostrarDetalhesValor(contaId) {
                                     `;
                                 }).join('')}
                             </div>
-                        ` : '<p style="color: #999; font-size: 12px; margin: 10px 0; text-align: center;">Nenhuma compra cadastrada ainda</p>'}
+                        ` : '<p style="color: #999; font-size: 12px; margin: 10px 0; text-align: center;">Nenhum item cadastrado ainda</p>'}
                         
                         ${conta.tipo === 'cartao' ? `
                             <div class="info-conta">
                                 ${conta.diaFechamento ? `◉ Fecha: ${conta.diaFechamento}` : ''} 
                                 ${conta.diaVencimento ? `/ ◉ Venc: ${conta.diaVencimento}` : ''}
                                 ${conta.limiteTotal ? `<br>◉ <span class="limite">(Limite disp: ${limiteDisp.toLocaleString('pt-BR', {minimumFractionDigits: 2})})</span>` : ''}
-                            </div>
-                        ` : ''}
-                        
-                        ${conta.observacoes ? `
-                            <div class="info-conta">
-                                📝 ${conta.observacoes}
                             </div>
                         ` : ''}
                         
