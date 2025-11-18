@@ -1575,7 +1575,7 @@
                         <label for="contaRecorrente" style="font-size: 12px;">Conta recorrente (água, luz, plano...)</label>
                     </div>
                 </div>
-<div class="form-grupo" id="grupoObservacoes" style="display: none;">
+<div class="form-grupo" id="grupoObservacoes">
                     <label>Observações:</label>
                     <input type="text" id="observacoes" placeholder="Ex: Pagamento quinzenal, PIX, etc...">
                 </div>
@@ -1640,6 +1640,25 @@
             <button class="modal-pendencias-fechar" onclick="fecharModalPendencias()">✕ Fechar</button>
         </div>
     </div>
+    <!-- PAINEL DE DEBUG -->
+    <div id="painelDebug" style="position: fixed; top: 80px; left: 10px; width: 350px; max-height: 450px; background: white; border: 3px solid #667eea; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.4); z-index: 5000; display: none; flex-direction: column;">
+        <div id="debugHeader" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px; border-radius: 10px 10px 0 0; display: flex; justify-content: space-between; align-items: center; cursor: move; user-select: none;">
+            <span style="font-weight: bold; font-size: 14px;">🐛 LOG DE DEBUG</span>
+            <button onclick="fecharDebug()" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px;">✕</button>
+        </div>
+        <div id="debugConteudo" style="padding: 12px; overflow-y: auto; max-height: 350px; font-family: 'Courier New', monospace; font-size: 11px; background: #f8f9fa;">
+            <p style="color: #999; text-align: center; padding: 20px;">Nenhum log registrado ainda...</p>
+        </div>
+        <div style="padding: 10px; border-top: 2px solid #e0e0e0; display: flex; gap: 8px;">
+            <button onclick="copiarLog()" style="flex: 1; background: #28a745; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px;">📋 Copiar Log</button>
+            <button onclick="limparLog()" style="flex: 1; background: #dc3545; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px;">🗑️ Limpar</button>
+        </div>
+    </div>
+
+    <!-- BOTÃO FLUTUANTE DE DEBUG -->
+    <button id="btnDebug" onclick="toggleDebug()" style="position: fixed; top: 23px; left: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 10px 14px; border-radius: 50px; cursor: pointer; font-size: 13px; font-weight: bold; box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5); z-index: 4999; transition: all 0.3s;">
+        🐛 DEBUG
+    </button>
     <div class="modal-limpar" id="modalLimpar">
         <div class="modal-limpar-conteudo">
             <h3 class="modal-limpar-titulo">⚠️ LIMPAR DADOS</h3>
@@ -1682,6 +1701,8 @@
         let pessoasTemp = [];
         const VERSAO_ATUAL = '2.0'; // Aumente este número quando fizer alterações importantes
         let longPressTimer = null;
+        let debugLogs = [];
+        let debugAtivo = false;
         let longPressTimerLimpar = null;
         let mesAtual = new Date();
         let todasContas = {}; // Armazena contas de todos os meses
@@ -1776,16 +1797,83 @@
                 checkboxAndamento.disabled = false;
             }
         }
+        
+        function toggleParcelasEmAndamentoEditTemp() {
+            const checkbox = document.getElementById('compraEmAndamentoEditTemp');
+            const grupoAndamento = document.getElementById('grupoParcelasAndamentoEditTemp');
+            
+            if (checkbox.checked) {
+                grupoAndamento.style.display = 'block';
+            } else {
+                grupoAndamento.style.display = 'none';
+            }
+        }
+        
+        function toggleContaRecorrenteEditTemp() {
+            const checkbox = document.getElementById('contaRecorrenteEditTemp');
+            const camposParcelas = document.getElementById('numParcelasEditTemp');
+            const checkboxAndamento = document.getElementById('compraEmAndamentoEditTemp');
+            
+            if (checkbox.checked) {
+                camposParcelas.value = '';
+                camposParcelas.disabled = true;
+                camposParcelas.placeholder = 'Recorrente';
+                checkboxAndamento.checked = false;
+                checkboxAndamento.disabled = true;
+                toggleParcelasEmAndamentoEditTemp();
+            } else {
+                camposParcelas.disabled = false;
+                camposParcelas.placeholder = '1 ou vazio';
+                checkboxAndamento.disabled = false;
+            }
+        }
+        
+        function toggleParcelasEmAndamentoEditCompraForm() {
+            const checkbox = document.getElementById('compraEmAndamentoEditCompraForm');
+            const grupoAndamento = document.getElementById('grupoParcelasAndamentoEditCompraForm');
+            
+            if (checkbox.checked) {
+                grupoAndamento.style.display = 'block';
+            } else {
+                grupoAndamento.style.display = 'none';
+            }
+        }
+        
+        function toggleContaRecorrenteEditCompraForm() {
+            const checkbox = document.getElementById('contaRecorrenteEditCompraForm');
+            const camposParcelas = document.getElementById('numParcelasEditForm');
+            const checkboxAndamento = document.getElementById('compraEmAndamentoEditCompraForm');
+            
+            if (checkbox.checked) {
+                camposParcelas.value = '';
+                camposParcelas.disabled = true;
+                camposParcelas.placeholder = 'Recorrente';
+                checkboxAndamento.checked = false;
+                checkboxAndamento.disabled = true;
+                toggleParcelasEmAndamentoEditCompraForm();
+            } else {
+                camposParcelas.disabled = false;
+                camposParcelas.placeholder = '1 ou vazio';
+                checkboxAndamento.disabled = false;
+            }
+        }
 
 function voltarMes() {
+            adicionarLog(`⬅️ VOLTANDO MÊS`, 'importante');
+            
             // Salvar estado atual antes de voltar
             const chaveAtual = getChaveMes();
+            adicionarLog(`   Salvando mês atual: ${chaveAtual}`, 'info');
+            
             if (contas.length > 0) {
                 todasContas[chaveAtual] = JSON.parse(JSON.stringify(contas));
                 localStorage.setItem('todasContas', JSON.stringify(todasContas));
+                adicionarLog(`   ✅ ${contas.length} contas salvas`, 'success');
             }
             
             mesAtual.setMonth(mesAtual.getMonth() - 1);
+            const novaMesChave = getChaveMes();
+            adicionarLog(`   Novo mês: ${novaMesChave}`, 'info');
             
             // Salvar o novo mês atual
             localStorage.setItem('mesAtualSalvo', JSON.stringify({
@@ -1797,9 +1885,11 @@ function voltarMes() {
             const dadosAtualizados = localStorage.getItem('todasContas');
             if (dadosAtualizados) {
                 todasContas = JSON.parse(dadosAtualizados);
+                adicionarLog(`   📥 Dados recarregados do localStorage`, 'info');
             }
             
             atualizarVisualizacao();
+            adicionarLog(`✅ Visualização atualizada`, 'success');
         }
         
         function avancarMes() {
@@ -2737,6 +2827,11 @@ function verificarEMigrarVersao() {
             let conteudo = '<form id="formAdicionarCompra" onsubmit="salvarNovaCompra(event, ' + contaId + ', ' + pessoaIndex + ')">';
             
             conteudo += '<div class="form-grupo-modal">';
+            conteudo += '<label>Nome da pessoa/descrição:</label>';
+            conteudo += `<input type="text" id="nomePessoaAddCompraForm" value="${nomePessoa}" readonly style="background: #f0f0f0;">`;
+            conteudo += '</div>';
+            
+            conteudo += '<div class="form-grupo-modal">';
             conteudo += `<label>Nome da ${tipoLabel.toLowerCase()}:</label>`;
             conteudo += '<input type="text" id="nomeCompraAddForm" required>';
             conteudo += '</div>';
@@ -2781,6 +2876,11 @@ function verificarEMigrarVersao() {
             conteudo += '</div>';
             conteudo += '</div>';
             
+            conteudo += '<div class="form-grupo-modal">';
+            conteudo += '<label>Observações:</label>';
+            conteudo += '<input type="text" id="observacoesAddForm" placeholder="Ex: Pagamento quinzenal, PIX, etc...">';
+            conteudo += '</div>';
+            
             conteudo += '<div class="form-acoes-modal">';
             conteudo += '<button type="button" class="btn-cancelar-modal" onclick="fecharModalForm()">Cancelar</button>';
             conteudo += '<button type="submit" class="btn-salvar-modal">Salvar</button>';
@@ -2803,6 +2903,7 @@ function verificarEMigrarVersao() {
             const valorTotal = parseFloat(document.getElementById('valorTotalAddForm').value);
             const tipoCompra = document.getElementById('tipoCompraAddForm').value;
             const ehRecorrente = document.getElementById('contaRecorrenteAddForm').checked;
+            const observacoes = document.getElementById('observacoesAddForm').value;
             
             let numParcelas, parcelaAtual, parcelasTexto, valorParcela;
             
@@ -2823,6 +2924,14 @@ function verificarEMigrarVersao() {
             }
             
             const dataCompraAtual = new Date().toISOString();
+            const chaveAtual = getChaveMes();
+            
+            // Determinar parcela base
+            let parcelaBase = 1;
+            if (document.getElementById('compraEmAndamentoAddForm').checked) {
+                const jaPagas = parseInt(document.getElementById('parcelasJaPagasAddForm').value) || 0;
+                parcelaBase = jaPagas + 1;
+            }
             
             const novaCompra = {
                 nome: nomeCompra,
@@ -2831,7 +2940,10 @@ function verificarEMigrarVersao() {
                 valorParcela: valorParcela,
                 parcelas: parcelasTexto,
                 dataCompra: new Date().toLocaleDateString('pt-BR'),
-                idUnico: dataCompraAtual + '_' + nomeCompra
+                idUnico: dataCompraAtual + '_' + nomeCompra,
+                observacoes: observacoes,
+                _parcelaBase: parcelaBase,
+                _mesBase: chaveAtual
             };
             
             if (!pessoa.compras) {
@@ -2849,7 +2961,7 @@ function verificarEMigrarVersao() {
                 adicionarCompraEmAndamentoRetroativa(conta.nome, conta.pessoas, jaPagas);
             }
             
-            // Propagar a nova compra para todos os meses
+            // Propagar a nova compra para todos os meses com informação de base
             propagarComprasParaTodosMeses(conta.nome, conta.pessoas);
             
             salvarNoStorage();
@@ -2914,95 +3026,54 @@ function verificarEMigrarVersao() {
             if (!conta) return;
             
             const pessoa = conta.pessoas[pessoaIndex];
-            const compra = pessoa.compras[compraIndex];
             
-            const tipoTransacao = conta.tipoTransacao === 'recebimento' ? 'entrada' : 'compra';
-            const tipoLabel = tipoTransacao === 'entrada' ? 'Entrada' : 'Compra';
+            // Marcar que estamos editando uma conta existente
+            contaEditando = conta;
             
-            document.getElementById('modalFormTitulo').textContent = `Editar ${tipoLabel}`;
+            // VERIFICAR se a pessoa já está em pessoasTemp
+            let indexNoPessoasTemp = pessoasTemp.findIndex(p => p.nome === pessoa.nome);
             
-            let conteudo = '<form id="formEditarCompra" onsubmit="salvarEdicaoCompra(event, ' + contaId + ', ' + pessoaIndex + ', ' + compraIndex + ')">';
+            if (indexNoPessoasTemp === -1) {
+                // Pessoa NÃO está em pessoasTemp - adicionar
+                pessoasTemp.push({
+                    nome: pessoa.nome,
+                    valor: pessoa.valor,
+                    valorTotal: pessoa.valorTotal,
+                    parcelas: pessoa.parcelas,
+                    observacoes: pessoa.observacoes,
+                    compras: JSON.parse(JSON.stringify(pessoa.compras)), // cópia profunda
+                    pago: pessoa.pago,
+                    parcelasJaPagas: pessoa.parcelasJaPagas || 0
+                });
+                indexNoPessoasTemp = pessoasTemp.length - 1;
+            }
             
-            conteudo += '<div class="form-grupo-modal">';
-            conteudo += `<label>Nome da ${tipoLabel.toLowerCase()}:</label>`;
-            conteudo += `<input type="text" id="nomeCompraEditForm" value="${compra.nome || ''}" required>`;
-            conteudo += '</div>';
-            
-            conteudo += '<div class="form-grupo-modal">';
-            conteudo += '<label>Tipo:</label>';
-            conteudo += '<select id="tipoCompraEditForm">';
-            conteudo += `<option value="cartao" ${compra.tipo === 'cartao' ? 'selected' : ''}>Cartão de Crédito</option>`;
-            conteudo += `<option value="boleto" ${compra.tipo === 'boleto' ? 'selected' : ''}>Boleto/Conta</option>`;
-            conteudo += `<option value="dinheiro" ${compra.tipo === 'dinheiro' ? 'selected' : ''}>Dinheiro</option>`;
-            conteudo += `<option value="pix" ${compra.tipo === 'pix' ? 'selected' : ''}>PIX</option>`;
-            conteudo += `<option value="outro" ${compra.tipo === 'outro' ? 'selected' : ''}>Outro</option>`;
-            conteudo += '</select>';
-            conteudo += '</div>';
-            
-            conteudo += '<div class="form-grupo-modal">';
-            conteudo += '<label>Valor Total:</label>';
-            conteudo += `<input type="number" id="valorTotalEditForm" step="0.01" value="${compra.valorTotal}" required>`;
-            conteudo += '</div>';
-            
-            conteudo += '<div class="form-grupo-modal">';
-            conteudo += '<label>Número de Parcelas:</label>';
-            const parcelasAtual = compra.parcelas ? compra.parcelas.split('/')[1] : '1';
-            conteudo += `<input type="number" id="numParcelasEditForm" min="1" value="${parcelasAtual}" required>`;
-            conteudo += '</div>';
-            
-            conteudo += '<div class="form-acoes-modal">';
-            conteudo += '<button type="button" class="btn-cancelar-modal" onclick="fecharModalForm()">Cancelar</button>';
-            conteudo += '<button type="submit" class="btn-salvar-modal">Salvar</button>';
-            conteudo += '</div>';
-            conteudo += '</form>';
-            
-            document.getElementById('modalFormConteudo').innerHTML = conteudo;
-            document.getElementById('modalForm').classList.add('ativo');
-        }
-
-        function salvarEdicaoCompra(e, contaId, pessoaIndex, compraIndex) {
-            e.preventDefault();
-            
-            const conta = contas.find(c => c.id === contaId);
-            if (!conta) return;
-            
-            const pessoa = conta.pessoas[pessoaIndex];
-            const compra = pessoa.compras[compraIndex];
-            
-            const novoNome = document.getElementById('nomeCompraEditForm').value;
-            const novoValorTotal = parseFloat(document.getElementById('valorTotalEditForm').value);
-            const novasParcelas = parseInt(document.getElementById('numParcelasEditForm').value);
-            const novoTipo = document.getElementById('tipoCompraEditForm').value;
-            
-            const novoValorParcela = novoValorTotal / novasParcelas;
-            const novoParcelasTexto = novasParcelas > 1 ? `1/${novasParcelas}` : '';
-            
-            pessoa.compras[compraIndex] = {
-                ...compra,
-                nome: novoNome,
-                tipo: novoTipo,
-                valorTotal: novoValorTotal,
-                valorParcela: novoValorParcela,
-                parcelas: novoParcelasTexto
-            };
-            
-            pessoa.valor = pessoa.compras.reduce((sum, c) => sum + c.valorParcela, 0);
-            
-            salvarNoStorage();
-            renderizarContas();
-            fecharModalForm();
-            alert('Compra editada com sucesso! ✅');
+            // Chamar a função editarPessoa que já existe e funciona bem
+            editarPessoa(indexNoPessoasTemp);
         }
 
         function excluirCompraEspecifica(contaId, pessoaIndex, compraIndex) {
-            if (!confirm('Tem certeza que deseja excluir esta compra?')) return;
-            
-            fecharModalMenu();
-            
             const conta = contas.find(c => c.id === contaId);
             if (!conta) return;
             
             const pessoa = conta.pessoas[pessoaIndex];
+            const compra = pessoa.compras[compraIndex];
+            
+            const confirmar = confirm(
+                '⚠️ ATENÇÃO!\n\n' +
+                `Deseja excluir "${compra.nome}" de TODOS OS MESES?\n\n` +
+                'Esta ação removerá todas as parcelas desta compra em todos os meses.\n\n' +
+                'Continuar?'
+            );
+            
+            if (!confirmar) return;
+            
+            fecharModalMenu();
+            
+            // Excluir de todos os meses
+            excluirCompraDeTodosOsMeses(conta.nome, pessoa.nome, compra.idUnico);
+            
+            // Excluir do mês atual também
             pessoa.compras.splice(compraIndex, 1);
             
             // Recalcular o valor total da pessoa
@@ -3014,12 +3085,20 @@ function verificarEMigrarVersao() {
             }
             
             salvarNoStorage();
+            
+            // Recarregar do storage para garantir consistência
+            carregarContasMesAtual();
+            
             renderizarContas();
-            alert('Compra excluída com sucesso! ✅');
+            alert('Compra excluída com sucesso de todos os meses! ✅');
         }
         function adicionarCompraEmAndamentoRetroativa(nomeConta, pessoasAtualizadas, parcelasJaPagas) {
             const chaveAtual = getChaveMes();
             const [anoAtual, mesAtualNum] = chaveAtual.split('-').map(Number);
+            adicionarLog(`📥 INICIANDO adicionarCompraEmAndamentoRetroativa()`, 'importante');
+            adicionarLog(`   Conta: ${nomeConta}`, 'info');
+            adicionarLog(`   Parcelas já pagas: ${parcelasJaPagas}`, 'info');
+            adicionarLog(`   Pessoas recebidas: ${pessoasAtualizadas.map(p => p.nome).join(', ')}`, 'info');
             
             // Percorrer os meses anteriores (quantos forem necessários para as parcelas já pagas)
             for (let i = 1; i <= parcelasJaPagas; i++) {
@@ -3032,6 +3111,7 @@ function verificarEMigrarVersao() {
                 if (!todasContas[chaveRetro]) {
                     todasContas[chaveRetro] = [];
                 }
+                adicionarLog(`📅 Processando mês: ${chaveRetro}`, 'info');
                 
                 const contasMesRetro = todasContas[chaveRetro];
                 let contaRetro = contasMesRetro.find(c => c.nome === nomeConta);
@@ -3053,6 +3133,7 @@ function verificarEMigrarVersao() {
                 if (contaRetro) {
                     // Adicionar as pessoas com as parcelas retroativas e marcá-las como pagas
                     pessoasAtualizadas.forEach(pessoaAtualizada => {
+                    adicionarLog(`   👤 Processando pessoa: ${pessoaAtualizada.nome}`, 'info');
                         if (pessoaAtualizada.compras && pessoaAtualizada.compras.length > 0) {
                             pessoaAtualizada.compras.forEach(compra => {
                                 const match = compra.parcelas ? compra.parcelas.match(/(\d+)\/(\d+)/) : null;
@@ -3066,17 +3147,31 @@ function verificarEMigrarVersao() {
                                     
                                     // Se a parcela retroativa é válida (maior que 0)
                                     if (parcelaRetro > 0 && parcelaRetro <= totalParcelas) {
-                                        // Verificar se já existe esta compra
-                                        const jaExiste = contaRetro.pessoas.some(p => {
-                                            if (p.nome !== pessoaAtualizada.nome) return false;
-                                            if (!p.compras) return false;
-                                            return p.compras.some(c => 
+                                        // Verificar se já existe esta compra para ESTA PESSOA especificamente
+                                        const pessoaJaExiste = contaRetro.pessoas.find(p => p.nome === pessoaAtualizada.nome);
+                                        
+                                        if (pessoaJaExiste && pessoaJaExiste.compras) {
+                                            // Pessoa existe - verificar se a compra específica já existe
+                                            const compraJaExiste = pessoaJaExiste.compras.some(c => 
                                                 c.idUnico === compra.idUnico || 
                                                 (c.nome === compra.nome && c.dataCompra === compra.dataCompra)
                                             );
-                                        });
-                                        
-                                        if (!jaExiste) {
+                                            
+                                            if (!compraJaExiste) {
+                                                adicionarLog(`      ➕ Adicionando compra "${compra.nome}" - Parcela ${parcelaRetro}/${totalParcelas}`, 'success');
+                                                // Adicionar compra à pessoa existente
+                                                pessoaJaExiste.compras.push({
+                                                    ...compra,
+                                                    parcelas: `${parcelaRetro}/${totalParcelas}`
+                                                });
+                                                
+                                                // Recalcular valor da pessoa
+                                                pessoaJaExiste.valor = pessoaJaExiste.compras.reduce((sum, c) => sum + (c.valorParcela || 0), 0);
+                                                pessoaJaExiste.valorTotal = pessoaJaExiste.compras.reduce((sum, c) => sum + (c.valorTotal || 0), 0);
+                                            }
+                                        } else {
+                                            // Pessoa não existe - criar nova entrada
+                                            adicionarLog(`      ✨ Criando nova entrada para "${pessoaAtualizada.nome}" - Parcela ${parcelaRetro}/${totalParcelas}`, 'success');
                                             contaRetro.pessoas.push({
                                                 nome: pessoaAtualizada.nome,
                                                 valor: compra.valorParcela,
@@ -3099,6 +3194,253 @@ function verificarEMigrarVersao() {
                     const todasPagas = contaRetro.pessoas.every(p => p.pago);
                     if (todasPagas && contaRetro.pessoas.length > 0) {
                         contaRetro.pago = true;
+                    }
+                }
+            }
+            
+            // Salvar alterações
+            localStorage.setItem('todasContas', JSON.stringify(todasContas));
+        }
+        function propagarEdicaoCompraParaTodosMeses(nomeConta, nomePessoa, compraEditada, parcelaBaseOriginal, mesBaseOriginal) {
+            const chaveAtual = getChaveMes();
+            
+            adicionarLog(`🔄 propagarEdicaoCompraParaTodosMeses INICIADA`, 'importante');
+            adicionarLog(`   Conta: ${nomeConta}, Pessoa: ${nomePessoa}`, 'info');
+            adicionarLog(`   Parcela Base: ${parcelaBaseOriginal}, Mês Base: ${mesBaseOriginal}`, 'info');
+            adicionarLog(`   ID da compra: ${compraEditada.idUnico}`, 'info');
+            
+            // GARANTIR que temos parcela base e mês base
+            if (!parcelaBaseOriginal || !mesBaseOriginal) {
+                adicionarLog(`   ❌ ERRO: Faltam informações de parcela base!`, 'error');
+                parcelaBaseOriginal = 1;
+                mesBaseOriginal = chaveAtual;
+            }
+            
+            // Calcular mês base como referência
+            const [anoBase, mesBase] = mesBaseOriginal.split('-').map(Number);
+            
+            adicionarLog(`   🗑️ FASE 1: Removendo compras antigas de todos os meses`, 'warning');
+            
+            // Limpar TODAS as ocorrências antigas desta compra em TODOS os meses primeiro
+            let mesesLimpos = 0;
+            Object.keys(todasContas).forEach(chaveMes => {
+                const contasMes = todasContas[chaveMes];
+                const contaEncontrada = contasMes.find(c => c.nome === nomeConta);
+                
+                if (contaEncontrada) {
+                    contaEncontrada.pessoas.forEach(pessoaItem => {
+                        if (pessoaItem.nome === nomePessoa && pessoaItem.compras) {
+                            const qtdAntes = pessoaItem.compras.length;
+                            pessoaItem.compras = pessoaItem.compras.filter(c => 
+                                c.idUnico !== compraEditada.idUnico
+                            );
+                            if (qtdAntes !== pessoaItem.compras.length) {
+                                mesesLimpos++;
+                                adicionarLog(`      Mês ${chaveMes}: Removida`, 'info');
+                            }
+                        }
+                    });
+                }
+            });
+            
+            adicionarLog(`   ✅ ${mesesLimpos} meses limpos`, 'success');
+            adicionarLog(`   ➕ FASE 2: Adicionando compra editada em todos os meses`, 'warning');
+            
+            // Agora adicionar a compra editada em todos os meses apropriados
+            let mesesAdicionados = 0;
+            Object.keys(todasContas).forEach(chaveMes => {
+                const [ano, mes] = chaveMes.split('-').map(Number);
+                const diffMesesDesdeBase = (ano - anoBase) * 12 + (mes - mesBase);
+                
+                const contasMes = todasContas[chaveMes];
+                const contaEncontrada = contasMes.find(c => c.nome === nomeConta);
+                
+                if (contaEncontrada) {
+                    let pessoaEncontrada = contaEncontrada.pessoas.find(p => p.nome === nomePessoa);
+                    
+                    // Se a pessoa não existe neste mês, criar
+                    if (!pessoaEncontrada) {
+                        pessoaEncontrada = {
+                            nome: nomePessoa,
+                            valor: 0,
+                            valorTotal: 0,
+                            compras: [],
+                            pago: false
+                        };
+                        contaEncontrada.pessoas.push(pessoaEncontrada);
+                        adicionarLog(`      Mês ${chaveMes}: Pessoa criada`, 'info');
+                    }
+                    
+                    if (!pessoaEncontrada.compras) {
+                        pessoaEncontrada.compras = [];
+                    }
+                    
+                    // Adicionar a compra editada com a parcela correta para este mês
+                    const match = compraEditada.parcelas ? compraEditada.parcelas.match(/(\d+)\/(\d+)/) : null;
+                    
+                    if (match) {
+                        // Compra parcelada
+                        const totalParcelas = parseInt(match[2]);
+                        const parcelaParaEsteMes = parcelaBaseOriginal + diffMesesDesdeBase;
+                        
+                        // Só adicionar se a parcela for válida
+                        if (parcelaParaEsteMes > 0 && parcelaParaEsteMes <= totalParcelas) {
+                            pessoaEncontrada.compras.push({
+                                ...compraEditada,
+                                parcelas: `${parcelaParaEsteMes}/${totalParcelas}`,
+                                _parcelaBase: parcelaBaseOriginal,
+                                _mesBase: mesBaseOriginal
+                            });
+                            mesesAdicionados++;
+                            adicionarLog(`      Mês ${chaveMes}: Adicionada parcela ${parcelaParaEsteMes}/${totalParcelas}`, 'success');
+                        }
+                    } else if (compraEditada.parcelas === 'recorrente') {
+                        // Compra recorrente
+                        pessoaEncontrada.compras.push({
+                            ...compraEditada,
+                            _parcelaBase: parcelaBaseOriginal,
+                            _mesBase: mesBaseOriginal
+                        });
+                        mesesAdicionados++;
+                        adicionarLog(`      Mês ${chaveMes}: Adicionada (recorrente)`, 'success');
+                    } else {
+                        // Compra única - só no mês base
+                        if (chaveMes === mesBaseOriginal) {
+                            pessoaEncontrada.compras.push({
+                                ...compraEditada,
+                                _parcelaBase: parcelaBaseOriginal,
+                                _mesBase: mesBaseOriginal
+                            });
+                            mesesAdicionados++;
+                            adicionarLog(`      Mês ${chaveMes}: Adicionada (única)`, 'success');
+                        }
+                    }
+                    
+                    // Recalcular valores da pessoa
+                    if (pessoaEncontrada.compras.length > 0) {
+                        pessoaEncontrada.valor = pessoaEncontrada.compras.reduce((sum, c) => sum + (c.valorParcela || 0), 0);
+                        pessoaEncontrada.valorTotal = pessoaEncontrada.compras.reduce((sum, c) => sum + (c.valorTotal || 0), 0);
+                    } else {
+                        // Se não tem mais compras, verificar se pode remover a pessoa
+                        const temOutrasCompras = pessoaEncontrada.compras && pessoaEncontrada.compras.length > 0;
+                        if (!temOutrasCompras) {
+                            contaEncontrada.pessoas = contaEncontrada.pessoas.filter(p => p.nome !== nomePessoa);
+                        }
+                    }
+                }
+            });
+            
+            adicionarLog(`   ✅ ${mesesAdicionados} meses adicionados`, 'success');
+            
+            // FASE 3: Limpar pessoas com valor zero (meses que não têm mais parcelas)
+            adicionarLog(`   🧹 FASE 3: Limpando pessoas com valor zero`, 'warning');
+            let pessoasRemovidas = 0;
+            
+            Object.keys(todasContas).forEach(chaveMes => {
+                const contasMes = todasContas[chaveMes];
+                const contaEncontrada = contasMes.find(c => c.nome === nomeConta);
+                
+                if (contaEncontrada) {
+                    const qtdAntes = contaEncontrada.pessoas.length;
+                    
+                    contaEncontrada.pessoas = contaEncontrada.pessoas.filter(p => {
+                        // Manter pessoa se NÃO for a pessoa sendo editada
+                        if (p.nome !== nomePessoa) return true;
+                        
+                        // Para a pessoa sendo editada, verificar se tem compras válidas
+                        const temCompras = p.compras && p.compras.length > 0;
+                        const valorTotal = p.compras ? p.compras.reduce((sum, c) => sum + (c.valorParcela || 0), 0) : p.valor;
+                        
+                        adicionarLog(`      Mês ${chaveMes}: ${p.nome} - Compras: ${temCompras}, Valor: ${valorTotal}`, 'info');
+                        
+                        // Manter apenas se tem compras E valor > 0
+                        return temCompras && valorTotal > 0;
+                    });
+                    
+                    if (contaEncontrada.pessoas.length < qtdAntes) {
+                        pessoasRemovidas++;
+                        adicionarLog(`      Mês ${chaveMes}: ❌ Pessoa removida (sem compras válidas)`, 'warning');
+                    }
+                }
+            });
+            
+            if (pessoasRemovidas > 0) {
+                adicionarLog(`   ✅ ${pessoasRemovidas} pessoas com valor zero removidas`, 'success');
+            } else {
+                adicionarLog(`   ℹ️ Nenhuma pessoa com valor zero encontrada`, 'info');
+            }
+            
+            adicionarLog(`✅ propagarEdicaoCompraParaTodosMeses CONCLUÍDA`, 'importante');
+            
+            // Salvar alterações
+            localStorage.setItem('todasContas', JSON.stringify(todasContas));
+        }
+        function excluirCompraDeTodosOsMeses(nomeConta, nomePessoa, idUnicoCompra) {
+            // Percorrer TODOS os meses (incluindo meses anteriores com parcelas pagas)
+            Object.keys(todasContas).forEach(chaveMes => {
+                const contasMes = todasContas[chaveMes];
+                const contaEncontrada = contasMes.find(c => c.nome === nomeConta);
+                
+                if (contaEncontrada) {
+                    // Usar um array para armazenar índices a remover (de trás para frente)
+                    const pessoasParaRemover = [];
+                    
+                    contaEncontrada.pessoas.forEach((pessoa, pessoaIdx) => {
+                        if (pessoa.nome === nomePessoa && pessoa.compras) {
+                            // Filtrar removendo a compra
+                            pessoa.compras = pessoa.compras.filter(c => c.idUnico !== idUnicoCompra);
+                            
+                            // Recalcular valor da pessoa
+                            if (pessoa.compras.length > 0) {
+                                pessoa.valor = pessoa.compras.reduce((sum, c) => sum + (c.valorParcela || 0), 0);
+                                pessoa.valorTotal = pessoa.compras.reduce((sum, c) => sum + (c.valorTotal || 0), 0);
+                            } else {
+                                // Se não tem mais compras, marcar para remover
+                                pessoasParaRemover.push(pessoaIdx);
+                            }
+                        }
+                    });
+                    
+                    // Remover pessoas sem compras (de trás para frente para não afetar índices)
+                    for (let i = pessoasParaRemover.length - 1; i >= 0; i--) {
+                        contaEncontrada.pessoas.splice(pessoasParaRemover[i], 1);
+                    }
+                    
+                    // Se a conta ficou sem pessoas, recalcular status de pagamento
+                    if (contaEncontrada.pessoas.length === 0) {
+                        contaEncontrada.pago = false;
+                    } else {
+                        // Recalcular se a conta está totalmente paga
+                        const todasPagas = contaEncontrada.pessoas.every(p => p.pago);
+                        contaEncontrada.pago = todasPagas;
+                    }
+                }
+                
+                // Limpar contas que ficaram completamente vazias
+                todasContas[chaveMes] = todasContas[chaveMes].filter(c => 
+                    c.nome !== nomeConta || c.pessoas.length > 0
+                );
+            });
+            
+            // Limpar pessoas com valor zero ou sem compras
+            adicionarLog(`   🧹 Limpando pessoas vazias após retroativo`, 'warning');
+            
+            for (let i = 1; i <= parcelasJaPagas; i++) {
+                const dataRetroativa = new Date(anoAtual, mesAtualNum - 1 - i, 1);
+                const anoRetro = dataRetroativa.getFullYear();
+                const mesRetro = dataRetroativa.getMonth() + 1;
+                const chaveRetro = `${anoRetro}-${String(mesRetro).padStart(2, '0')}`;
+                
+                if (todasContas[chaveRetro]) {
+                    const contasMesRetro = todasContas[chaveRetro];
+                    const contaRetro = contasMesRetro.find(c => c.nome === nomeConta);
+                    
+                    if (contaRetro) {
+                        contaRetro.pessoas = contaRetro.pessoas.filter(p => {
+                            const temValor = p.valor > 0;
+                            const temCompras = p.compras && p.compras.length > 0;
+                            return temValor || temCompras;
+                        });
                     }
                 }
             }
@@ -3314,6 +3656,338 @@ function verificarEMigrarVersao() {
             localStorage.setItem('todasContas', JSON.stringify(todasContas));
         }
         
+        // ========================================
+        // SISTEMA DE DEBUG
+        // ========================================
+        
+        function toggleDebug() {
+            debugAtivo = !debugAtivo;
+            const painel = document.getElementById('painelDebug');
+            const btn = document.getElementById('btnDebug');
+            
+            if (debugAtivo) {
+                painel.style.display = 'flex';
+                btn.textContent = '🐛 DEBUG ON';
+                btn.style.background = 'linear-gradient(135deg, #28a745 0%, #20c997 100%)';
+                
+                // Renderizar todos os logs acumulados
+                renderizarLogsAcumulados();
+                
+                adicionarLog('🟢 DEBUG ABERTO', 'success');
+            } else {
+                painel.style.display = 'none';
+                btn.textContent = '🐛 DEBUG';
+                btn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+            }
+        }
+        
+        function renderizarLogsAcumulados() {
+            const conteudo = document.getElementById('debugConteudo');
+            conteudo.innerHTML = ''; // Limpar conteúdo antigo
+            
+            if (debugLogs.length === 0) {
+                conteudo.innerHTML = '<p style="color: #999; text-align: center; padding: 20px;">Nenhum log registrado ainda...</p>';
+                return;
+            }
+            
+            // Renderizar todos os logs acumulados
+            debugLogs.forEach(log => {
+                let cor = '#333';
+                let icone = 'ℹ️';
+                let background = '#e7f3ff';
+                
+                switch(log.tipo) {
+                    case 'success':
+                        cor = '#28a745';
+                        icone = '✅';
+                        background = '#d4edda';
+                        break;
+                    case 'error':
+                        cor = '#dc3545';
+                        icone = '❌';
+                        background = '#f8d7da';
+                        break;
+                    case 'warning':
+                        cor = '#ffc107';
+                        icone = '⚠️';
+                        background = '#fff3cd';
+                        break;
+                    case 'importante':
+                        cor = '#764ba2';
+                        icone = '🔥';
+                        background = '#e7d4ff';
+                        break;
+                }
+                
+                const logDiv = document.createElement('div');
+                logDiv.style.cssText = `margin-bottom: 8px; padding: 8px; background: ${background}; border-left: 4px solid ${cor}; border-radius: 4px; word-wrap: break-word;`;
+                logDiv.innerHTML = `
+                    <div style="color: #666; font-size: 10px; margin-bottom: 4px;">${log.timestamp}</div>
+                    <div style="color: ${cor}; font-weight: bold;">${icone} ${log.mensagem}</div>
+                `;
+                
+                conteudo.appendChild(logDiv);
+            });
+            
+            conteudo.scrollTop = conteudo.scrollHeight;
+        }
+        
+        function fecharDebug() {
+            debugAtivo = false;
+            document.getElementById('painelDebug').style.display = 'none';
+            document.getElementById('btnDebug').textContent = '🐛 DEBUG';
+            document.getElementById('btnDebug').style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+        }
+        
+        function adicionarLog(mensagem, tipo = 'info') {
+            // SEMPRE capturar logs, mesmo com debug fechado
+            
+            const timestamp = new Date().toLocaleTimeString('pt-BR');
+            const log = {
+                timestamp: timestamp,
+                mensagem: mensagem,
+                tipo: tipo
+            };
+            
+            debugLogs.push(log);
+            
+            // Só renderizar se o debug estiver aberto
+            if (!debugAtivo) return;
+            
+            const conteudo = document.getElementById('debugConteudo');
+            
+            if (debugLogs.length === 1) {
+                conteudo.innerHTML = '';
+            }
+            
+            let cor = '#333';
+            let icone = 'ℹ️';
+            let background = '#e7f3ff';
+            
+            switch(tipo) {
+                case 'success':
+                    cor = '#28a745';
+                    icone = '✅';
+                    background = '#d4edda';
+                    break;
+                case 'error':
+                    cor = '#dc3545';
+                    icone = '❌';
+                    background = '#f8d7da';
+                    break;
+                case 'warning':
+                    cor = '#ffc107';
+                    icone = '⚠️';
+                    background = '#fff3cd';
+                    break;
+                case 'importante':
+                    cor = '#764ba2';
+                    icone = '🔥';
+                    background = '#e7d4ff';
+                    break;
+            }
+            
+            const logDiv = document.createElement('div');
+            logDiv.style.cssText = `margin-bottom: 8px; padding: 8px; background: ${background}; border-left: 4px solid ${cor}; border-radius: 4px; word-wrap: break-word;`;
+            logDiv.innerHTML = `
+                <div style="color: #666; font-size: 10px; margin-bottom: 4px;">${timestamp}</div>
+                <div style="color: ${cor}; font-weight: bold;">${icone} ${mensagem}</div>
+            `;
+            
+            conteudo.appendChild(logDiv);
+            conteudo.scrollTop = conteudo.scrollHeight;
+        }
+        
+        function copiarLog() {
+            let textoLog = '=== LOG DE DEBUG - GESTOR FINANCEIRO ===\n\n';
+            
+            debugLogs.forEach(log => {
+                textoLog += `[${log.timestamp}] ${log.mensagem}\n`;
+            });
+            
+            textoLog += '\n=== FIM DO LOG ===';
+            
+            // Método alternativo para copiar (funciona em mais navegadores)
+            const textarea = document.createElement('textarea');
+            textarea.value = textoLog;
+            textarea.style.position = 'fixed';
+            textarea.style.top = '-9999px';
+            textarea.style.left = '-9999px';
+            document.body.appendChild(textarea);
+            
+            try {
+                textarea.select();
+                textarea.setSelectionRange(0, 99999); // Para mobile
+                
+                const sucesso = document.execCommand('copy');
+                
+                if (sucesso) {
+                    alert('✅ Log copiado para a área de transferência!');
+                } else {
+                    // Se falhar, mostrar o log em um modal para copiar manualmente
+                    mostrarLogParaCopiar(textoLog);
+                }
+            } catch (err) {
+                // Se der erro, mostrar o log em um modal para copiar manualmente
+                mostrarLogParaCopiar(textoLog);
+            } finally {
+                document.body.removeChild(textarea);
+            }
+        }
+        
+        function mostrarLogParaCopiar(textoLog) {
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.8);
+                z-index: 10000;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            `;
+            
+            const conteudo = document.createElement('div');
+            conteudo.style.cssText = `
+                background: white;
+                border-radius: 12px;
+                padding: 20px;
+                max-width: 90%;
+                max-height: 80vh;
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+            `;
+            
+            const titulo = document.createElement('h3');
+            titulo.textContent = '📋 Copie o log manualmente';
+            titulo.style.cssText = 'margin-bottom: 10px; color: #333;';
+            
+            const textarea = document.createElement('textarea');
+            textarea.value = textoLog;
+            textarea.style.cssText = `
+                width: 100%;
+                height: 400px;
+                font-family: 'Courier New', monospace;
+                font-size: 11px;
+                padding: 10px;
+                border: 2px solid #667eea;
+                border-radius: 6px;
+                resize: none;
+                margin-bottom: 10px;
+            `;
+            textarea.readOnly = true;
+            
+            const btnFechar = document.createElement('button');
+            btnFechar.textContent = '✕ Fechar';
+            btnFechar.style.cssText = `
+                background: #667eea;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-weight: bold;
+            `;
+            btnFechar.onclick = () => document.body.removeChild(modal);
+            
+            conteudo.appendChild(titulo);
+            conteudo.appendChild(textarea);
+            conteudo.appendChild(btnFechar);
+            modal.appendChild(conteudo);
+            document.body.appendChild(modal);
+            
+            // Selecionar todo o texto automaticamente
+            textarea.select();
+        }
+        
+        function limparLog() {
+            debugLogs = [];
+            document.getElementById('debugConteudo').innerHTML = '<p style="color: #999; text-align: center; padding: 20px;">Log limpo. Aguardando novas ações...</p>';
+            adicionarLog('🧹 Log limpo', 'warning');
+        }
+        // ========================================
+        // TORNAR PAINEL DE DEBUG ARRASTÁVEL
+        // ========================================
+        let debugDragging = false;
+        let debugStartX, debugStartY, debugInitialX, debugInitialY;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const debugPanel = document.getElementById('painelDebug');
+            const debugHeader = document.getElementById('debugHeader');
+            
+            if (!debugHeader || !debugPanel) return;
+            
+            debugHeader.addEventListener('mousedown', startDragDebug);
+            debugHeader.addEventListener('touchstart', startDragDebug);
+            
+            document.addEventListener('mousemove', dragDebug);
+            document.addEventListener('touchmove', dragDebug);
+            
+            document.addEventListener('mouseup', stopDragDebug);
+            document.addEventListener('touchend', stopDragDebug);
+            
+            function startDragDebug(e) {
+                debugDragging = true;
+                
+                const rect = debugPanel.getBoundingClientRect();
+                debugInitialX = rect.left;
+                debugInitialY = rect.top;
+                
+                if (e.type === 'touchstart') {
+                    debugStartX = e.touches[0].clientX;
+                    debugStartY = e.touches[0].clientY;
+                } else {
+                    debugStartX = e.clientX;
+                    debugStartY = e.clientY;
+                }
+                
+                debugHeader.style.cursor = 'grabbing';
+                e.preventDefault();
+            }
+            
+            function dragDebug(e) {
+                if (!debugDragging) return;
+                
+                let currentX, currentY;
+                
+                if (e.type === 'touchmove') {
+                    currentX = e.touches[0].clientX;
+                    currentY = e.touches[0].clientY;
+                } else {
+                    currentX = e.clientX;
+                    currentY = e.clientY;
+                }
+                
+                const deltaX = currentX - debugStartX;
+                const deltaY = currentY - debugStartY;
+                
+                const newX = debugInitialX + deltaX;
+                const newY = debugInitialY + deltaY;
+                
+                // Limites da tela
+                const maxX = window.innerWidth - debugPanel.offsetWidth;
+                const maxY = window.innerHeight - debugPanel.offsetHeight;
+                
+                const boundedX = Math.max(0, Math.min(newX, maxX));
+                const boundedY = Math.max(0, Math.min(newY, maxY));
+                
+                debugPanel.style.left = boundedX + 'px';
+                debugPanel.style.top = boundedY + 'px';
+                
+                e.preventDefault();
+            }
+            
+            function stopDragDebug() {
+                if (debugDragging) {
+                    debugDragging = false;
+                    debugHeader.style.cursor = 'move';
+                }
+            }
+        });
         function toggleMenuBackup() {
             const menu = document.getElementById('menuBackup');
             menu.classList.toggle('ativo');
@@ -3550,9 +4224,6 @@ function adicionarNovaCompra(contaId) {
                 // Habilitar campo de parcelas
                 numeroParcelas.disabled = false;
                 numeroParcelas.placeholder = '1 ou vazio';
-                
-                // Mostrar campo de observações
-                grupoObservacoes.style.display = 'block';
             } else {
                 // Mostrar checkboxes para pagamentos
                 checkboxAndamento.parentElement.parentElement.style.display = 'block';
@@ -3561,10 +4232,10 @@ function adicionarNovaCompra(contaId) {
                 // Habilitar
                 checkboxAndamento.disabled = false;
                 checkboxRecorrente.disabled = false;
-                
-                // Esconder campo de observações
-                grupoObservacoes.style.display = 'none';
             }
+            
+            // Campo de observações sempre visível
+            grupoObservacoes.style.display = 'block';
         }
         function atualizarLabelValor() {
             const tipoTransacao = document.getElementById('tipoTransacao').value;
@@ -3626,6 +4297,11 @@ function adicionarNovaCompra(contaId) {
             conteudo += '</div>';
             conteudo += '</div>';
             
+            conteudo += '<div class="form-grupo-modal">';
+            conteudo += '<label>Observações:</label>';
+            conteudo += '<input type="text" id="observacoesForm" placeholder="Ex: Pagamento quinzenal, PIX, etc...">';
+            conteudo += '</div>';
+            
             conteudo += '<div class="form-acoes-modal">';
             conteudo += '<button type="button" class="btn-cancelar-modal" onclick="fecharModalForm()">Cancelar</button>';
             conteudo += '<button type="submit" class="btn-salvar-modal">Salvar</button>';
@@ -3647,8 +4323,11 @@ function adicionarNovaCompra(contaId) {
             const nomeCompra = document.getElementById('nomeCompraForm').value;
             const valorTotal = parseFloat(document.getElementById('valorTotalForm').value);
             const ehRecorrente = document.getElementById('contaRecorrenteForm').checked;
+            const observacoes = document.getElementById('observacoesForm').value;
             
             let numParcelas, parcelaAtual, parcelasTexto, valorParcela, jaPagas;
+            let parcelaBase = 1;
+            const mesBase = getChaveMes();
             
             if (ehRecorrente) {
                 numParcelas = 1;
@@ -3661,11 +4340,13 @@ function adicionarNovaCompra(contaId) {
                 parcelaAtual = jaPagas + 1;
                 valorParcela = valorTotal / numParcelas;
                 parcelasTexto = numParcelas > 1 ? `${parcelaAtual}/${numParcelas}` : '';
+                parcelaBase = parcelaAtual;
             } else {
                 numParcelas = parseInt(document.getElementById('numParcelasForm').value) || 1;
                 valorParcela = valorTotal / numParcelas;
                 parcelasTexto = numParcelas > 1 ? `1/${numParcelas}` : '';
                 jaPagas = 0;
+                parcelaBase = 1;
             }
             
             const dataCompraAtual = new Date().toISOString();
@@ -3675,13 +4356,16 @@ function adicionarNovaCompra(contaId) {
                 valor: valorParcela,
                 valorTotal: valorTotal,
                 parcelas: parcelasTexto,
+                observacoes: observacoes,
                 compras: [{
                     nome: nomeCompra,
                     valorTotal: valorTotal,
                     valorParcela: valorParcela,
                     parcelas: parcelasTexto,
                     dataCompra: new Date().toLocaleDateString('pt-BR'),
-                    idUnico: dataCompraAtual + '_' + nomeCompra
+                    idUnico: dataCompraAtual + '_' + nomeCompra,
+                    _parcelaBase: parcelaBase,
+                    _mesBase: mesBase
                 }],
                 pago: false,
                 parcelasJaPagas: jaPagas
@@ -3694,6 +4378,19 @@ function adicionarNovaCompra(contaId) {
         }
 
         function removerPessoa(index) {
+            pessoasTemp.splice(index, 1);
+            renderizarPessoasForm();
+        }
+        
+        function removerPessoaTemp(index) {
+            const pessoaRemovida = pessoasTemp[index];
+            
+            // Verificar se está editando uma conta
+            if (contaEditando) {
+                // Remover de todos os meses
+                removerPessoaDeTodosOsMeses(contaEditando.nome, pessoaRemovida.nome);
+            }
+            
             pessoasTemp.splice(index, 1);
             renderizarPessoasForm();
         }
@@ -3725,8 +4422,64 @@ function adicionarNovaCompra(contaId) {
             
             conteudo += '<div class="form-grupo-modal">';
             conteudo += '<label>Número de Parcelas:</label>';
-            const parcelas = pessoa.parcelas ? pessoa.parcelas.split('/')[1] : '1';
+            const parcelas = pessoa.parcelas && pessoa.parcelas !== 'recorrente' ? pessoa.parcelas.split('/')[1] : '1';
             conteudo += `<input type="number" id="numParcelasEditTemp" min="1" value="${parcelas}" required>`;
+            conteudo += '</div>';
+            
+            // Detectar automaticamente se tem parcelas já pagas
+            const chaveAtual = getChaveMes();
+            let parcelasJaPagasDetectadas = pessoa.parcelasJaPagas || 0;
+            
+            // Se não tem salvo, tentar detectar nos meses anteriores
+            if (parcelasJaPagasDetectadas === 0 && pessoa.compras && pessoa.compras[0]) {
+                const compraRef = pessoa.compras[0];
+                
+                Object.keys(todasContas).sort().forEach(chaveMes => {
+                    if (chaveMes < chaveAtual && contaEditando) {
+                        const contasMes = todasContas[chaveMes];
+                        const contaEncontrada = contasMes.find(c => c.nome === contaEditando.nome);
+                        
+                        if (contaEncontrada) {
+                            contaEncontrada.pessoas.forEach(p => {
+                                if (p.nome === pessoa.nome && p.compras && p.pago) {
+                                    p.compras.forEach(c => {
+                                        if (c.idUnico === compraRef.idUnico || (c.nome === compraRef.nome && c.dataCompra === compraRef.dataCompra)) {
+                                            parcelasJaPagasDetectadas++;
+                                        }
+                                    });
+                                }
+                            });
+                        }
+                    }
+                });
+            }
+            
+            const temParcelasJaPagas = parcelasJaPagasDetectadas > 0;
+            
+            conteudo += '<div class="form-grupo-modal">';
+            conteudo += '<div class="checkbox-group">';
+            conteudo += `<input type="checkbox" id="compraEmAndamentoEditTemp" ${temParcelasJaPagas ? 'checked' : ''} onchange="toggleParcelasEmAndamentoEditTemp()">`;
+            conteudo += '<label for="compraEmAndamentoEditTemp" style="font-size: 12px;">Compra em andamento</label>';
+            conteudo += '</div>';
+            conteudo += '</div>';
+            
+            conteudo += `<div class="form-grupo-modal" id="grupoParcelasAndamentoEditTemp" style="display: ${temParcelasJaPagas ? 'block' : 'none'};">`;
+            conteudo += '<label>Já pagas:</label>';
+            conteudo += `<input type="number" id="parcelasJaPagasEditTemp" min="0" value="${parcelasJaPagasDetectadas}" placeholder="0">`;
+            conteudo += '</div>';
+            
+            conteudo += '<div class="form-grupo-modal">';
+            conteudo += '<div class="checkbox-group">';
+            const ehRecorrente = pessoa.parcelas === 'recorrente';
+            conteudo += `<input type="checkbox" id="contaRecorrenteEditTemp" ${ehRecorrente ? 'checked' : ''} onchange="toggleContaRecorrenteEditTemp()">`;
+            conteudo += '<label for="contaRecorrenteEditTemp" style="font-size: 12px;">Conta recorrente (água, luz, plano...)</label>';
+            conteudo += '</div>';
+            conteudo += '</div>';
+            
+            conteudo += '<div class="form-grupo-modal">';
+            conteudo += '<label>Observações:</label>';
+            const observacoes = pessoa.observacoes || '';
+            conteudo += `<input type="text" id="observacoesEditTemp" placeholder="Ex: Pagamento quinzenal, PIX, etc..." value="${observacoes}">`;
             conteudo += '</div>';
             
             conteudo += '<div class="form-acoes-modal">';
@@ -3744,25 +4497,221 @@ function adicionarNovaCompra(contaId) {
             const nome = document.getElementById('nomePessoaEditTemp').value;
             const nomeCompra = document.getElementById('nomeCompraEditTemp').value;
             const valorTotal = parseFloat(document.getElementById('valorTotalEditTemp').value);
-            const numParcelas = parseInt(document.getElementById('numParcelasEditTemp').value);
+            const ehRecorrente = document.getElementById('contaRecorrenteEditTemp').checked;
+            const observacoes = document.getElementById('observacoesEditTemp').value;
             
-            const valorParcela = valorTotal / numParcelas;
-            const parcelasTexto = numParcelas > 1 ? `1/${numParcelas}` : '';
+            let numParcelas, parcelaAtual, parcelasTexto, valorParcela, jaPagas;
+            
+            // Preservar informações de parcela base original
+            const pessoaOriginal = pessoasTemp[index];
+            let parcelaBaseOriginal = null;
+            let mesBaseOriginal = null;
+            
+            if (pessoaOriginal.compras && pessoaOriginal.compras[0]) {
+                parcelaBaseOriginal = pessoaOriginal.compras[0]._parcelaBase;
+                mesBaseOriginal = pessoaOriginal.compras[0]._mesBase;
+            }
+            
+            adicionarLog(`   📋 Dados originais - Parcela Base: ${parcelaBaseOriginal}, Mês Base: ${mesBaseOriginal}`, 'info');
+            
+            if (ehRecorrente) {
+                numParcelas = 1;
+                valorParcela = valorTotal;
+                parcelasTexto = 'recorrente';
+                jaPagas = 0;
+            } else if (document.getElementById('compraEmAndamentoEditTemp').checked) {
+                jaPagas = parseInt(document.getElementById('parcelasJaPagasEditTemp').value) || 0;
+                numParcelas = parseInt(document.getElementById('numParcelasEditTemp').value) || 1;
+                parcelaAtual = jaPagas + 1;
+                valorParcela = valorTotal / numParcelas;
+                parcelasTexto = numParcelas > 1 ? `${parcelaAtual}/${numParcelas}` : '';
+                
+                // RECALCULAR parcela base quando parcelas já pagas mudarem
+                parcelaBaseOriginal = parcelaAtual;
+                mesBaseOriginal = getChaveMes();
+                
+                adicionarLog(`   🔄 RECALCULANDO Parcela Base: ${parcelaBaseOriginal} (já pagas: ${jaPagas})`, 'warning');
+            } else {
+                numParcelas = parseInt(document.getElementById('numParcelasEditTemp').value) || 1;
+                valorParcela = valorTotal / numParcelas;
+                
+                // Manter a parcela atual se existir
+                if (pessoasTemp[index].parcelas && pessoasTemp[index].parcelas !== 'recorrente') {
+                    const matchAtual = pessoasTemp[index].parcelas.match(/(\d+)\/(\d+)/);
+                    if (matchAtual) {
+                        const parcelaAtualNum = parseInt(matchAtual[1]);
+                        parcelasTexto = numParcelas > 1 ? `${parcelaAtualNum}/${numParcelas}` : '';
+                        
+                        // Preservar parcela base se existir
+                        if (!parcelaBaseOriginal) {
+                            parcelaBaseOriginal = parcelaAtualNum;
+                            mesBaseOriginal = getChaveMes();
+                        }
+                    } else {
+                        parcelasTexto = numParcelas > 1 ? `1/${numParcelas}` : '';
+                    }
+                } else {
+                    parcelasTexto = numParcelas > 1 ? `1/${numParcelas}` : '';
+                }
+                jaPagas = 0;
+            }
+            
+            const dataCompraAtual = pessoasTemp[index].compras && pessoasTemp[index].compras[0] 
+                ? pessoasTemp[index].compras[0].idUnico 
+                : (new Date().toISOString() + '_' + nomeCompra);
+            
+            const compraEditada = {
+                nome: nomeCompra,
+                valorTotal: valorTotal,
+                valorParcela: valorParcela,
+                parcelas: parcelasTexto,
+                dataCompra: new Date().toLocaleDateString('pt-BR'),
+                idUnico: dataCompraAtual,
+                observacoes: observacoes,
+                _parcelaBase: parcelaBaseOriginal,
+                _mesBase: mesBaseOriginal
+            };
             
             pessoasTemp[index] = {
                 nome,
                 valor: valorParcela,
                 valorTotal: valorTotal,
                 parcelas: parcelasTexto,
-                compras: [{
-                    nome: nomeCompra,
-                    valorTotal: valorTotal,
-                    valorParcela: valorParcela,
-                    parcelas: parcelasTexto,
-                    dataCompra: new Date().toLocaleDateString('pt-BR')
-                }],
-                pago: pessoasTemp[index].pago
+                observacoes: observacoes,
+                compras: [compraEditada],
+                pago: pessoasTemp[index].pago,
+                parcelasJaPagas: jaPagas
             };
+            
+            // NOVO: Se está editando uma conta existente, propagar mudanças
+            if (contaEditando) {
+                adicionarLog(`✏️ EDITANDO compra através do menu de compras: ${nome}`, 'importante');
+                adicionarLog(`   📋 Parcelas já pagas: ${jaPagas}`, 'info');
+                adicionarLog(`   📋 Parcela Base: ${parcelaBaseOriginal}, Mês Base: ${mesBaseOriginal}`, 'info');
+                
+                // Atualizar a pessoa na conta real
+                const pessoaNaConta = contaEditando.pessoas.find(p => p.nome === nome);
+                if (pessoaNaConta) {
+                    pessoaNaConta.valor = valorParcela;
+                    pessoaNaConta.valorTotal = valorTotal;
+                    pessoaNaConta.parcelas = parcelasTexto;
+                    pessoaNaConta.observacoes = observacoes;
+                    pessoaNaConta.compras = [compraEditada];
+                    pessoaNaConta.parcelasJaPagas = jaPagas;
+                    
+                    adicionarLog(`   ✅ Pessoa atualizada na conta real`, 'success');
+                }
+                
+                // SEMPRE propagar, mesmo sem parcela base (criar se necessário)
+                if (!parcelaBaseOriginal || !mesBaseOriginal) {
+                    parcelaBaseOriginal = jaPagas > 0 ? jaPagas + 1 : 1;
+                    mesBaseOriginal = getChaveMes();
+                    compraEditada._parcelaBase = parcelaBaseOriginal;
+                    compraEditada._mesBase = mesBaseOriginal;
+                    adicionarLog(`   ⚠️ Criando parcela base: ${parcelaBaseOriginal}, Mês base: ${mesBaseOriginal}`, 'warning');
+                }
+                
+                adicionarLog(`   🔄 Iniciando propagação para todos os meses...`, 'info');
+                
+                // Propagar edição para todos os meses
+                propagarEdicaoCompraParaTodosMeses(
+                    contaEditando.nome,
+                    nome,
+                    compraEditada,
+                    parcelaBaseOriginal,
+                    mesBaseOriginal
+                );
+                
+                adicionarLog(`   ✅ Propagação concluída`, 'success');
+                
+                // Se aumentou as parcelas já pagas, adicionar meses retroativos extras
+                if (jaPagas > 0) {
+                    adicionarLog(`   🔄 Adicionando ${jaPagas} meses retroativos extras...`, 'warning');
+                    adicionarCompraEmAndamentoRetroativa(
+                        contaEditando.nome,
+                        [{
+                            nome: nome,
+                            valor: valorParcela,
+                            valorTotal: valorTotal,
+                            parcelas: parcelasTexto,
+                            observacoes: observacoes,
+                            compras: [compraEditada],
+                            pago: false,
+                            parcelasJaPagas: jaPagas
+                        }],
+                        jaPagas
+                    );
+                }
+                
+                // LIMPEZA FINAL: Remover pessoas vazias APÓS adicionar retroativos
+                adicionarLog(`   🧹 LIMPEZA FINAL: Removendo pessoas vazias em TODOS os meses`, 'warning');
+                let pessoasRemovidasFinal = 0;
+                
+                Object.keys(todasContas).forEach(chaveMes => {
+                    const contasMes = todasContas[chaveMes];
+                    const contaEncontrada = contasMes.find(c => c.nome === contaEditando.nome);
+                    
+                    if (contaEncontrada) {
+                        const qtdAntes = contaEncontrada.pessoas.length;
+                        
+                        contaEncontrada.pessoas = contaEncontrada.pessoas.filter(p => {
+                            if (p.nome !== nome) return true;
+                            
+                            const temCompras = p.compras && p.compras.length > 0;
+                            const valorTotal = p.compras ? p.compras.reduce((sum, c) => sum + (c.valorParcela || 0), 0) : p.valor;
+                            
+                            const manter = temCompras && valorTotal > 0;
+                            
+                            if (!manter) {
+                                adicionarLog(`      ❌ Mês ${chaveMes}: Removendo "${p.nome}" (Compras: ${temCompras}, Valor: ${valorTotal})`, 'warning');
+                            }
+                            
+                            return manter;
+                        });
+                        
+                        if (contaEncontrada.pessoas.length < qtdAntes) {
+                            pessoasRemovidasFinal++;
+                        }
+                    }
+                });
+                
+                if (pessoasRemovidasFinal > 0) {
+                    adicionarLog(`   ✅ ${pessoasRemovidasFinal} pessoas vazias removidas`, 'success');
+                } else {
+                    adicionarLog(`   ℹ️ Nenhuma pessoa vazia encontrada`, 'info');
+                }
+                
+                // Salvar PRIMEIRO no localStorage via propagação
+                localStorage.setItem('todasContas', JSON.stringify(todasContas));
+                
+                adicionarLog(`   💾 Forçando recarga do localStorage`, 'warning');
+                
+                // FORÇAR recarga COMPLETA do localStorage
+                const dadosAtualizadosAgora = localStorage.getItem('todasContas');
+                if (dadosAtualizadosAgora) {
+                    todasContas = JSON.parse(dadosAtualizadosAgora);
+                    adicionarLog(`   ✅ todasContas recarregado`, 'success');
+                }
+                
+                // Recarregar o mês atual COM OS DADOS NOVOS
+                carregarContasMesAtual();
+                adicionarLog(`   ✅ carregarContasMesAtual() executado`, 'success');
+                
+                // Renderizar interface
+                renderizarContas();
+                
+                adicionarLog(`✅ Edição salva com sucesso!`, 'success');
+                
+                // Fechar TODOS os modais abertos
+                fecharModalForm();
+                fecharModal();
+                
+                // Limpar variáveis temporárias
+                contaEditando = null;
+                pessoasTemp = [];
+                
+                return; // Sair da função
+            }
             
             renderizarPessoasForm();
             fecharModalForm();
@@ -3780,7 +4729,7 @@ function adicionarNovaCompra(contaId) {
                     <span>${p.nome} ${p.parcelas ? `(${p.parcelas})` : ''}: R$ ${p.valor.toFixed(2)}</span>
                     <div>
                         <button type="button" class="btn-editar-pessoa" onclick="editarPessoa(${i})">✏️</button>
-                        <button type="button" class="btn-remover" onclick="removerPessoa(${i})">✕</button>
+                        <button type="button" class="btn-remover" onclick="removerPessoaTemp(${i})">✕</button>
                     </div>
                 </div>
             `).join('');
@@ -3858,94 +4807,390 @@ function adicionarNovaCompra(contaId) {
                 const index = contas.findIndex(c => c.id === contaEditando.id);
                 const contaExistente = contas[index];
                 
-                // Preservar o estado de pagamento da conta ao adicionar novas pessoas
-                conta.pago = contaExistente.pago;
+                // NÃO preservar o estado de pagamento - será recalculado ao final
                 
-                const pessoasFinais = [...contaExistente.pessoas];
+                // ==========================================
+                // ANÁLISE: O QUE O USUÁRIO ESTÁ FAZENDO?
+                // ==========================================
                 
-                // Processar apenas as pessoas novas (de pessoasTemp e "Eu" se houver)
-                conta.pessoas.forEach(novaPessoa => {
-                    const indexExistente = pessoasFinais.findIndex(p => p.nome === novaPessoa.nome);
+                const meuValorPreenchido = parseFloat(document.getElementById('meuValor').value) || 0;
+                const temNovasPessoasTemp = pessoasTemp.length > 0;
+                
+                // Identificar pessoas que foram REMOVIDAS
+                // CORREÇÃO: Incluir todas as pessoas existentes que não foram tocadas
+                const pessoaEuExistia = contaExistente.pessoas.find(p => p.nome === 'Eu');
+                const nomesPessoasNovas = [...pessoasTemp.map(p => p.nome)];
+                
+                // Se "Eu" já existia E não preencheu meuValor, significa que não está removendo, apenas não está editando
+                if (meuValorPreenchido > 0) {
+                    nomesPessoasNovas.push('Eu');
+                } else if (pessoaEuExistia) {
+                    // Se "Eu" já existia e não preencheu o campo, manter "Eu" na lista (não remover)
+                    nomesPessoasNovas.push('Eu');
+                }
+                
+                const pessoasRemovidas = contaExistente.pessoas.filter(p => 
+                    !nomesPessoasNovas.includes(p.nome)
+                );
+                
+                // Remover apenas pessoas que foram REALMENTE deletadas de TODOS os meses
+                pessoasRemovidas.forEach(pessoaRemovida => {
+                    removerPessoaDeTodosOsMeses(conta.nome, pessoaRemovida.nome);
+                });
+                
+                // ==========================================
+                // CONSTRUIR LISTA FINAL DE PESSOAS
+                // ==========================================
+                
+                const pessoasFinais = [];
+                
+                // ==========================================
+                // PROCESSAR "EU"
+                // ==========================================
+                
+                const pessoaEuExistente = contaExistente.pessoas.find(p => p.nome === 'Eu');
+                
+                if (meuValorPreenchido > 0) {
+                    // Usuário PREENCHEU "Meu Valor" = Quer EDITAR ou ADICIONAR "Eu"
+                    const pessoaEuNova = conta.pessoas.find(p => p.nome === 'Eu');
                     
-                    if (indexExistente !== -1) {
-                        // Pessoa já existe - adicionar apenas as compras novas
-                        const pessoaExistente = pessoasFinais[indexExistente];
-                        if (novaPessoa.compras && novaPessoa.compras.length > 0) {
-                            pessoaExistente.compras = pessoaExistente.compras || [];
+                    if (pessoaEuExistente) {
+                        // "Eu" JÁ EXISTIA = EDIÇÃO
+                        
+                        // Remover compras antigas de "Eu" de todos os meses
+                        if (pessoaEuExistente.compras && pessoaEuExistente.compras.length > 0) {
+                            pessoaEuExistente.compras.forEach(compraAntiga => {
+                                excluirCompraDeTodosOsMeses(conta.nome, 'Eu', compraAntiga.idUnico);
+                            });
+                        }
+                        
+                        // Adicionar novas compras de "Eu" em todos os meses
+                        if (pessoaEuNova && pessoaEuNova.compras && pessoaEuNova.compras.length > 0) {
+                            propagarComprasParaTodosMeses(conta.nome, [pessoaEuNova]);
+                        }
+                        
+                        pessoasFinais.push(pessoaEuNova);
+                        
+                        // Se tem parcelas já pagas, adicionar retroativo
+                        const ehCompraEmAndamento = document.getElementById('compraEmAndamento').checked;
+                        const jaPagas = ehCompraEmAndamento ? (parseInt(document.getElementById('parcelasJaPagas').value) || 0) : 0;
+                        if (jaPagas > 0 && pessoaEuNova) {
+                            adicionarCompraEmAndamentoRetroativa(conta.nome, [pessoaEuNova], jaPagas);
+                        }
+                        
+                    } else {
+                        // "Eu" NÃO EXISTIA = NOVA ADIÇÃO
+                        pessoasFinais.push(pessoaEuNova);
+                        
+                        if (pessoaEuNova && pessoaEuNova.compras && pessoaEuNova.compras.length > 0) {
+                            propagarComprasParaTodosMeses(conta.nome, [pessoaEuNova]);
+                        }
+                        
+                        if (pessoaEuNova && pessoaEuNova.parcelasJaPagas && pessoaEuNova.parcelasJaPagas > 0) {
+                            adicionarCompraEmAndamentoRetroativa(conta.nome, [pessoaEuNova], pessoaEuNova.parcelasJaPagas);
+                        }
+                    }
+                    
+                } else {
+                    // Usuário NÃO preencheu "Meu Valor"
+                    
+                    if (pessoaEuExistente) {
+                        // "Eu" existe e não foi tocado = MANTER COMO ESTÁ
+                        pessoasFinais.push(pessoaEuExistente);
+                    }
+                    // Se não existe "Eu" e não preencheu = não adicionar
+                }
+                
+                // ==========================================
+                // PROCESSAR OUTRAS PESSOAS (pessoasTemp)
+                // ==========================================
+                
+                pessoasTemp.forEach(novaPessoa => {
+                    const pessoaExistente = contaExistente.pessoas.find(p => p.nome === novaPessoa.nome);
+                    
+                    adicionarLog(`🔍 Processando pessoa: ${novaPessoa.nome}`, 'info');
+                    if (novaPessoa.parcelasJaPagas) {
+                        adicionarLog(`   📋 Possui ${novaPessoa.parcelasJaPagas} parcelas já pagas`, 'warning');
+                    }
+                    
+                    if (pessoaExistente) {
+                        // Pessoa JÁ EXISTIA = Verificar se foi REALMENTE editada
+                    adicionarLog(`🔍 Processando pessoa: ${novaPessoa.nome}`, 'info');
+                        if (novaPessoa.compras && novaPessoa.compras[0]) {
+                            adicionarLog(`   📋 Parcela Base: ${novaPessoa.compras[0]._parcelaBase}, Mês Base: ${novaPessoa.compras[0]._mesBase}`, 'info');
+                            if (novaPessoa.parcelasJaPagas) {
+                                adicionarLog(`   📋 Possui ${novaPessoa.parcelasJaPagas} parcelas já pagas`, 'info');
+                            }
+                        }
+                        
+                        // Comparar se as compras mudaram OU se parcelas já pagas mudaram
+                        let foiEditada = false;
+                        
+                        // FORÇAR LOG DETALHADO
+                        adicionarLog(`   🔎 Comparando dados antigos vs novos:`, 'info');
+                        
+                        if (pessoaExistente.compras && novaPessoa.compras) {
+                            // Comparar IDs das compras
+                            const idsAntigos = pessoaExistente.compras.map(c => c.idUnico).sort().join(',');
+                            const idsNovos = novaPessoa.compras.map(c => c.idUnico).sort().join(',');
                             
-                            // Verificar se é uma compra realmente nova (não duplicar)
-                            novaPessoa.compras.forEach(novaCompra => {
-                                const compraDuplicada = pessoaExistente.compras.some(c => 
-                                    c.nome === novaCompra.nome && 
-                                    c.valorTotal === novaCompra.valorTotal &&
-                                    c.dataCompra === novaCompra.dataCompra
-                                );
+                            adicionarLog(`      IDs antigos: ${idsAntigos}`, 'info');
+                            adicionarLog(`      IDs novos: ${idsNovos}`, 'info');
+                            
+                            if (idsAntigos !== idsNovos) {
+                                foiEditada = true;
+                                adicionarLog(`   📝 IDs das compras mudaram`, 'warning');
+                            }
+                            
+                            // COMPARAR TAMBÉM O CONTEÚDO DAS COMPRAS
+                            pessoaExistente.compras.forEach((compraAntiga, idx) => {
+                                const compraNova = novaPessoa.compras.find(c => c.idUnico === compraAntiga.idUnico);
                                 
-                                if (!compraDuplicada) {
-                                    pessoaExistente.compras.push(novaCompra);
+                                if (compraNova) {
+                                    if (compraAntiga.nome !== compraNova.nome) {
+                                        foiEditada = true;
+                                        adicionarLog(`      Nome mudou: "${compraAntiga.nome}" → "${compraNova.nome}"`, 'warning');
+                                    }
                                     
-                                    // Se a compra é em andamento, adicionar retroativo
-                                    if (novaPessoa.parcelasJaPagas && novaPessoa.parcelasJaPagas > 0) {
-                                        adicionarCompraEmAndamentoRetroativa(conta.nome, [{
-                                            nome: novaPessoa.nome,
-                                            valor: novaCompra.valorParcela,
-                                            valorTotal: novaCompra.valorTotal,
-                                            parcelas: novaCompra.parcelas,
-                                            compras: [novaCompra],
-                                            pago: false
-                                        }], novaPessoa.parcelasJaPagas);
+                                    if (compraAntiga.valorTotal !== compraNova.valorTotal) {
+                                        foiEditada = true;
+                                        adicionarLog(`      Valor total mudou: R$ ${compraAntiga.valorTotal} → R$ ${compraNova.valorTotal}`, 'warning');
+                                    }
+                                    
+                                    const parcelasAntigas = compraAntiga.parcelas || '';
+                                    const parcelasNovas = compraNova.parcelas || '';
+                                    
+                                    if (parcelasAntigas !== parcelasNovas) {
+                                        const matchAntigo = parcelasAntigas.match(/\/(\d+)/);
+                                        const matchNovo = parcelasNovas.match(/\/(\d+)/);
+                                        
+                                        const totalAntigo = matchAntigo ? parseInt(matchAntigo[1]) : 1;
+                                        const totalNovo = matchNovo ? parseInt(matchNovo[1]) : 1;
+                                        
+                                        if (totalAntigo !== totalNovo) {
+                                            foiEditada = true;
+                                            adicionarLog(`      Número de parcelas mudou: ${totalAntigo} → ${totalNovo}`, 'warning');
+                                        }
+                                    }
+                                    
+                                    if (compraAntiga._parcelaBase !== compraNova._parcelaBase) {
+                                        foiEditada = true;
+                                        adicionarLog(`      Parcela base mudou: ${compraAntiga._parcelaBase} → ${compraNova._parcelaBase}`, 'warning');
                                     }
                                 }
                             });
-                            
-                            pessoaExistente.valor = pessoaExistente.compras.reduce((sum, c) => sum + c.valorParcela, 0);
                         }
+                        
+                        // Verificar mudança em parcelas já pagas
+                        const parcelasJaPagasAntigas = pessoaExistente.parcelasJaPagas || 0;
+                        const parcelasJaPagasNovas = novaPessoa.parcelasJaPagas || 0;
+                        
+                        adicionarLog(`      Parcelas já pagas antigas: ${parcelasJaPagasAntigas}`, 'info');
+                        adicionarLog(`      Parcelas já pagas novas: ${parcelasJaPagasNovas}`, 'info');
+                        
+                        if (parcelasJaPagasAntigas !== parcelasJaPagasNovas) {
+                            foiEditada = true;
+                            adicionarLog(`   📝 Parcelas já pagas mudaram: ${parcelasJaPagasAntigas} → ${parcelasJaPagasNovas}`, 'warning');
+                        }
+                        
+                        // Verificar mudança no valor total
+                        const valorTotalAntigo = pessoaExistente.valorTotal || pessoaExistente.valor;
+                        const valorTotalNovo = novaPessoa.valorTotal || novaPessoa.valor;
+                        
+                        if (valorTotalAntigo !== valorTotalNovo) {
+                            foiEditada = true;
+                            adicionarLog(`   📝 Valor total mudou: R$ ${valorTotalAntigo} → R$ ${valorTotalNovo}`, 'warning');
+                        }
+                        
+                        adicionarLog(`   🎯 Resultado: ${foiEditada ? 'FOI EDITADA' : 'NÃO foi editada'}`, foiEditada ? 'importante' : 'info');
+                        
+                        if (foiEditada) {
+                            adicionarLog(`✏️ Pessoa foi REALMENTE editada: ${novaPessoa.nome}`, 'warning');
+                            
+                            // Remover compras antigas
+                            if (pessoaExistente.compras && pessoaExistente.compras.length > 0) {
+                                adicionarLog(`   🗑️ Removendo ${pessoaExistente.compras.length} compras antigas`, 'info');
+                                pessoaExistente.compras.forEach(compraAntiga => {
+                                    excluirCompraDeTodosOsMeses(conta.nome, novaPessoa.nome, compraAntiga.idUnico);
+                                });
+                            }
+                            
+                            // Remover parcelas retroativas antigas
+                            if (parcelasJaPagasAntigas > 0) {
+                                adicionarLog(`   🗑️ Removendo ${parcelasJaPagasAntigas} parcelas retroativas antigas`, 'warning');
+                            }
+                            
+                            // PRIMEIRO: Adicionar parcelas retroativas
+                            if (novaPessoa.parcelasJaPagas && novaPessoa.parcelasJaPagas > 0) {
+                                adicionarLog(`   🔄 Processando ${novaPessoa.parcelasJaPagas} parcelas retroativas`, 'warning');
+                                adicionarCompraEmAndamentoRetroativa(conta.nome, [novaPessoa], novaPessoa.parcelasJaPagas);
+                            }
+                            
+                            // DEPOIS: Propagar para meses futuros
+                            if (novaPessoa.compras && novaPessoa.compras.length > 0) {
+                                adicionarLog(`   📤 Propagando ${novaPessoa.compras.length} compras para meses futuros`, 'info');
+                                propagarComprasParaTodosMeses(conta.nome, [novaPessoa]);
+                            }
+                        } else {
+                            adicionarLog(`✓ Pessoa não foi editada, mantendo: ${novaPessoa.nome}`, 'info');
+                        }
+                        
+                        // Usar dados corretos
+                        const pessoaFinal = foiEditada ? novaPessoa : pessoaExistente;
+                        
+                        // GARANTIR que parcelasJaPagas está presente
+                        if (!pessoaFinal.parcelasJaPagas && novaPessoa.parcelasJaPagas) {
+                            pessoaFinal.parcelasJaPagas = novaPessoa.parcelasJaPagas;
+                        }
+                        
+                        // GARANTIR _parcelaBase e _mesBase nas compras
+                        if (pessoaFinal.compras && pessoaFinal.compras.length > 0) {
+                            pessoaFinal.compras.forEach(compra => {
+                                if (!compra._parcelaBase || !compra._mesBase) {
+                                    const chaveAtual = getChaveMes();
+                                    compra._parcelaBase = pessoaFinal.parcelasJaPagas 
+                                        ? (pessoaFinal.parcelasJaPagas + 1) 
+                                        : (compra.parcelas && compra.parcelas.match(/(\d+)\//) 
+                                            ? parseInt(compra.parcelas.match(/(\d+)\//)[1]) 
+                                            : 1);
+                                    compra._mesBase = chaveAtual;
+                                }
+                            });
+                        }
+                        
+                        // IMPORTANTE: Sempre garantir que parcelasJaPagas está presente
+                        if (!pessoaFinal.parcelasJaPagas && novaPessoa.parcelasJaPagas) {
+                            pessoaFinal.parcelasJaPagas = novaPessoa.parcelasJaPagas;
+                        }
+                        
+                        // GARANTIR que _parcelaBase e _mesBase estejam presentes nas compras
+                        if (pessoaFinal.compras && pessoaFinal.compras.length > 0) {
+                            pessoaFinal.compras.forEach(compra => {
+                                if (!compra._parcelaBase || !compra._mesBase) {
+                                    const chaveAtual = getChaveMes();
+                                    compra._parcelaBase = pessoaFinal.parcelasJaPagas 
+                                        ? (pessoaFinal.parcelasJaPagas + 1) 
+                                        : (compra.parcelas && compra.parcelas.match(/(\d+)\//) 
+                                            ? parseInt(compra.parcelas.match(/(\d+)\//)[1]) 
+                                            : 1);
+                                    compra._mesBase = chaveAtual;
+                                }
+                            });
+                        }
+                        
+                        pessoasFinais.push(pessoaFinal);
+                        
                     } else {
-                        // Pessoa não existe - adicionar ela
+                        // Pessoa NÃO EXISTIA = NOVA
+                        adicionarLog(`➕ Adicionando nova pessoa: ${novaPessoa.nome}`, 'success');
+                        
                         pessoasFinais.push(novaPessoa);
                         
-                        // Se a pessoa é em andamento, adicionar retroativo
+                        // PRIMEIRO: Adicionar parcelas retroativas (ANTES de propagar)
                         if (novaPessoa.parcelasJaPagas && novaPessoa.parcelasJaPagas > 0) {
+                            adicionarLog(`   🔄 Processando ${novaPessoa.parcelasJaPagas} parcelas retroativas ANTES de propagar`, 'warning');
                             adicionarCompraEmAndamentoRetroativa(conta.nome, [novaPessoa], novaPessoa.parcelasJaPagas);
                         }
                         
-                        // Desmarcar conta como paga ao adicionar nova pessoa
+                        // DEPOIS: Propagar para meses futuros
+                        if (novaPessoa.compras && novaPessoa.compras.length > 0) {
+                            adicionarLog(`   📤 Propagando ${novaPessoa.compras.length} compras para meses futuros`, 'info');
+                            propagarComprasParaTodosMeses(conta.nome, [novaPessoa]);
+                        }
+                        
                         conta.pago = false;
                     }
                 });
                 
+                // ==========================================
+                // ADICIONAR PESSOAS QUE NÃO FORAM TOCADAS
+                // ==========================================
+                
+                contaExistente.pessoas.forEach(pessoaExistente => {
+                    // Se não é "Eu" e não está em pessoasTemp e não foi removida
+                    if (pessoaExistente.nome !== 'Eu' && 
+                        !pessoasTemp.some(p => p.nome === pessoaExistente.nome) &&
+                        !pessoasRemovidas.some(p => p.nome === pessoaExistente.nome)) {
+                        
+                        // Verificar se já não foi adicionada
+                        if (!pessoasFinais.some(p => p.nome === pessoaExistente.nome)) {
+                            pessoasFinais.push(pessoaExistente);
+                        }
+                    }
+                });
+                
+                // ==========================================
+                // FINALIZAR
+                // ==========================================
+                
                 conta.pessoas = pessoasFinais;
                 contas[index] = conta;
                 
-                // Se for compra em andamento, adicionar aos meses anteriores
-                if (ehCompraEmAndamento && jaPagas > 0) {
-                    adicionarCompraEmAndamentoRetroativa(conta.nome, conta.pessoas, jaPagas);
-                }
-                
-                // Propagar para todos os meses (futuros E já existentes)
-                propagarComprasParaTodosMeses(conta.nome, conta.pessoas);
-                
             } else {
                 contas.push(conta);
+                adicionarLog(`🆕 NOVA CONTA CRIADA: ${conta.nome}`, 'importante');
+                adicionarLog(`   Pessoas adicionadas: ${conta.pessoas.map(p => p.nome).join(', ')}`, 'info');
                 
-                // Se for compra em andamento, adicionar aos meses anteriores
+                // PRIMEIRO: Propagar para meses futuros (cria estrutura base)
+                adicionarLog(`📤 Propagando compras para meses futuros...`, 'info');
+                propagarComprasParaTodosMeses(conta.nome, conta.pessoas);
+                
+                // DEPOIS: Adicionar parcelas retroativas (sobrescreve/adiciona nos meses passados)
+                // Se for compra em andamento DO MEU VALOR, adicionar aos meses anteriores
                 if (ehCompraEmAndamento && jaPagas > 0) {
-                    adicionarCompraEmAndamentoRetroativa(conta.nome, conta.pessoas, jaPagas);
+                    adicionarLog(`🔄 Processando "Eu" com ${jaPagas} parcelas já pagas`, 'warning');
+                    const pessoaEu = conta.pessoas.find(p => p.nome === 'Eu');
+                    if (pessoaEu) {
+                        adicionarCompraEmAndamentoRetroativa(conta.nome, [pessoaEu], jaPagas);
+                    }
                 }
                 
-                // Processar parcelas retroativas de pessoasTemp
+                // Processar parcelas retroativas de TODAS as pessoasTemp
                 pessoasTemp.forEach(pessoaTemp => {
                     if (pessoaTemp.parcelasJaPagas && pessoaTemp.parcelasJaPagas > 0) {
+                        adicionarLog(`🔄 Processando "${pessoaTemp.nome}" com ${pessoaTemp.parcelasJaPagas} parcelas já pagas`, 'warning');
                         adicionarCompraEmAndamentoRetroativa(conta.nome, [pessoaTemp], pessoaTemp.parcelasJaPagas);
                     }
                 });
                 
-                // Nova conta - propagar imediatamente para todos os meses futuros
-                propagarComprasParaTodosMeses(conta.nome, conta.pessoas);
+                adicionarLog(`✅ CONTA SALVA COM SUCESSO!`, 'success');
             }
             
+            // ========================================
+            // RECALCULAR STATUS DE PAGAMENTO DA CONTA
+            // ========================================
+            // A conta só está paga se TODAS as pessoas estão pagas
+            const todasPessoasPagas = conta.pessoas.length > 0 && conta.pessoas.every(p => p.pago);
+            conta.pago = todasPessoasPagas;
+            // Limpar pessoas com valor zero em TODOS os meses antes de salvar
+            Object.keys(todasContas).forEach(chaveMes => {
+                todasContas[chaveMes].forEach(contaMes => {
+                    contaMes.pessoas = contaMes.pessoas.filter(p => {
+                        const temValor = p.valor > 0;
+                        const temCompras = p.compras && p.compras.length > 0 && p.compras.some(c => c.valorParcela > 0);
+                        return temValor || temCompras;
+                    });
+                });
+            });
+            
+            // Salvar SEMPRE, independente do fluxo
             salvarNoStorage();
+            // Salvar SEMPRE, independente do fluxo
+            salvarNoStorage();
+            
+            // FORÇAR recarga completa do localStorage
+            const dadosAtualizados = localStorage.getItem('todasContas');
+            if (dadosAtualizados) {
+                todasContas = JSON.parse(dadosAtualizados);
+            }
+            
+            // Recarregar para garantir consistência
+            carregarContasMesAtual();
+            
+            // Renderizar com dados atualizados
             renderizarContas();
+            
+            // Fechar modal
             fecharModal();
         }
 
@@ -3971,12 +5216,21 @@ function adicionarNovaCompra(contaId) {
 
         function togglePagoConta(id) {
             const conta = contas.find(c => c.id === id);
-            conta.pago = !conta.pago;
             
             if (conta.pago) {
-                conta.pessoas.forEach(p => p.pago = true);
-            } else {
+                // Se está pago e quer desmarcar, perguntar confirmação
+                const confirmar = confirm(`⚠️ Desmarcar Pagamento\n\nDesmarcar "${conta.nome}" como paga?\n\nIsso desmarcará TODAS as pessoas/compras desta conta.`);
+                if (!confirmar) {
+                    return;
+                }
+                
+                // Desmarcar tudo
+                conta.pago = false;
                 conta.pessoas.forEach(p => p.pago = false);
+            } else {
+                // Se não está pago e quer marcar, marcar tudo
+                conta.pago = true;
+                conta.pessoas.forEach(p => p.pago = true);
             }
             
             // CRÍTICO: Salvar IMEDIATAMENTE
@@ -4008,13 +5262,12 @@ function adicionarNovaCompra(contaId) {
             // Alternar status de pago
             conta.pessoas[pessoaIndex].pago = !conta.pessoas[pessoaIndex].pago;
             
-            // Verificar se todas estão pagas para marcar a conta
+            // ========================================
+            // RECALCULAR STATUS DA CONTA
+            // ========================================
+            // A conta só está paga se TODAS as pessoas estão pagas
             const todasPagas = conta.pessoas.every(p => p.pago);
-            if (todasPagas) {
-                conta.pago = true;
-            } else {
-                conta.pago = false;
-            }
+            conta.pago = todasPagas;
             
             // CRÍTICO: Salvar IMEDIATAMENTE antes de renderizar
             salvarNoStorage();
@@ -4272,169 +5525,110 @@ function adicionarNovaCompra(contaId) {
             const dataAtualMes = new Date(anoAtual, mesAtual - 1);
             
             let pendencias = [];
-            const recebimentosRastreados = new Map(); // Para rastrear recebimentos únicos
             
-            // Percorrer TODOS os meses (incluindo atual e anteriores)
+            // Mapa para rastrear recebimentos
+            const recebimentosInfo = new Map();
+            
+            // PRIMEIRA PASSADA: Coletar informações sobre todos os recebimentos
             Object.keys(todasContas).sort().forEach(chaveMes => {
                 const [ano, mes] = chaveMes.split('-').map(Number);
                 const dataMes = new Date(ano, mes - 1);
                 
-                // Se for mês anterior OU atual
                 if (dataMes <= dataAtualMes) {
                     const contasMes = todasContas[chaveMes];
                     const contaEncontrada = contasMes.find(c => c.nome === nomeConta);
                     
-                    if (contaEncontrada) {
+                    if (contaEncontrada && contaEncontrada.tipoTransacao === 'recebimento') {
                         contaEncontrada.pessoas.forEach(pessoa => {
-                            // PROCESSAR CADA COMPRA INDIVIDUALMENTE
                             if (pessoa.compras && pessoa.compras.length > 0) {
                                 pessoa.compras.forEach(compra => {
                                     const idCompra = compra.idUnico || (compra.nome + '_' + compra.dataCompra);
                                     
-                                    // Para RECEBIMENTOS: rastrear por identificador único
-                                    if (contaEncontrada.tipoTransacao === 'recebimento') {
-                                        // Se NÃO foi pago
-                                        if (!pessoa.pago) {
-                                            // Verificar se já foi registrado como pendência
-                                            if (!recebimentosRastreados.has(idCompra)) {
-                                                recebimentosRastreados.set(idCompra, {
-                                                    mes: chaveMes,
-                                                    nomePessoa: pessoa.nome === 'Eu' ? 'Devedor' : pessoa.nome,
-                                                    nomeCompra: compra.nome,
-                                                    valor: compra.valorParcela,
-                                                    valorTotal: compra.valorTotal,
-                                                    parcelas: compra.parcelas || pessoa.parcelas,
-                                                    tipoTransacao: contaEncontrada.tipoTransacao,
-                                                    idCompra: idCompra
-                                                });
-                                            } else {
-                                                // Já existe - atualizar apenas se for de um mês mais antigo
-                                                const pendenciaExistente = recebimentosRastreados.get(idCompra);
-                                                if (chaveMes < pendenciaExistente.mes) {
-                                                    pendenciaExistente.mes = chaveMes;
-                                                }
-                                            }
-                                        } else {
-                                            // Se foi pago, remover do rastreamento (não é mais pendência)
-                                            recebimentosRastreados.delete(idCompra);
+                                    if (!recebimentosInfo.has(idCompra)) {
+                                        let totalParcelas = 1;
+                                        const match = compra.parcelas ? compra.parcelas.match(/(\d+)\/(\d+)/) : null;
+                                        if (match) {
+                                            totalParcelas = parseInt(match[2]);
                                         }
-                                    } else {
-                                        // Para PAGAMENTOS: verificar cada compra individualmente
-                                        if (!pessoa.pago) {
-                                            // Recorrentes sempre são pendências se não pagos
-                                            if (compra.parcelas === 'recorrente' || pessoa.parcelas === 'recorrente') {
-                                                // Só adiciona se não for do mês atual
-                                                if (chaveMes !== chaveAtual) {
-                                                    // Verificar se já não está na lista
-                                                    const jaAdicionado = pendencias.some(p => 
-                                                        p.idCompra === idCompra && p.mes === chaveMes
-                                                    );
-                                                    
-                                                    if (!jaAdicionado) {
-                                                        pendencias.push({
-                                                            mes: chaveMes,
-                                                            nomePessoa: pessoa.nome,
-                                                            nomeCompra: compra.nome,
-                                                            valor: compra.valorParcela,
-                                                            valorTotal: compra.valorTotal,
-                                                            parcelas: compra.parcelas || pessoa.parcelas,
-                                                            tipoTransacao: contaEncontrada.tipoTransacao,
-                                                            idCompra: idCompra
-                                                        });
-                                                    }
-                                                }
-                                            } else {
-                                                // Parcelas normais
-                                                if (chaveMes !== chaveAtual) {
-                                                    const jaAdicionado = pendencias.some(p => 
-                                                        p.idCompra === idCompra && p.mes === chaveMes
-                                                    );
-                                                    
-                                                    if (!jaAdicionado) {
-                                                        pendencias.push({
-                                                            mes: chaveMes,
-                                                            nomePessoa: pessoa.nome,
-                                                            nomeCompra: compra.nome,
-                                                            valor: compra.valorParcela,
-                                                            valorTotal: compra.valorTotal,
-                                                            parcelas: compra.parcelas || pessoa.parcelas,
-                                                            tipoTransacao: contaEncontrada.tipoTransacao,
-                                                            idCompra: idCompra
-                                                        });
-                                                    }
-                                                }
-                                            }
+                                        
+                                        recebimentosInfo.set(idCompra, {
+                                            totalParcelas: totalParcelas,
+                                            parcelasPagas: 0,
+                                            maiorParcelaVista: 0,
+                                            mesesDetalhados: [],
+                                            recorrente: compra.parcelas === 'recorrente',
+                                            valorParcela: compra.valorParcela,
+                                            valorTotal: compra.valorTotal,
+                                            nome: compra.nome,
+                                            nomePessoa: pessoa.nome === 'Eu' ? 'Devedor' : pessoa.nome
+                                        });
+                                    }
+                                    
+                                    const info = recebimentosInfo.get(idCompra);
+                                    
+                                    // Rastrear qual é a maior parcela vista até agora
+                                    const match = compra.parcelas ? compra.parcelas.match(/(\d+)\/(\d+)/) : null;
+                                    if (match) {
+                                        const parcelaNum = parseInt(match[1]);
+                                        if (parcelaNum > info.maiorParcelaVista) {
+                                            info.maiorParcelaVista = parcelaNum;
                                         }
+                                    }
+                                    
+                                    // Registrar detalhes deste mês
+                                    info.mesesDetalhados.push({
+                                        mes: chaveMes,
+                                        pago: pessoa.pago,
+                                        parcela: compra.parcelas
+                                    });
+                                    
+                                    // Contar se foi pago
+                                    if (pessoa.pago) {
+                                        info.parcelasPagas++;
                                     }
                                 });
                             } else {
-                                // Pessoa SEM compras detalhadas (comportamento legado)
+                                // Pessoa sem compras detalhadas
                                 const idGenerico = pessoa.nome + '_' + pessoa.valor + '_' + (pessoa.parcelas || 'unico');
                                 
-                                if (contaEncontrada.tipoTransacao === 'recebimento') {
-                                    if (!pessoa.pago) {
-                                        if (!recebimentosRastreados.has(idGenerico)) {
-                                            recebimentosRastreados.set(idGenerico, {
-                                                mes: chaveMes,
-                                                nomePessoa: pessoa.nome === 'Eu' ? 'Devedor' : pessoa.nome,
-                                                nomeCompra: 'Valor direto',
-                                                valor: pessoa.valor,
-                                                valorTotal: pessoa.valorTotal || pessoa.valor,
-                                                parcelas: pessoa.parcelas,
-                                                tipoTransacao: contaEncontrada.tipoTransacao,
-                                                idCompra: idGenerico
-                                            });
-                                        } else {
-                                            const pendenciaExistente = recebimentosRastreados.get(idGenerico);
-                                            if (chaveMes < pendenciaExistente.mes) {
-                                                pendenciaExistente.mes = chaveMes;
-                                            }
-                                        }
-                                    } else {
-                                        recebimentosRastreados.delete(idGenerico);
+                                if (!recebimentosInfo.has(idGenerico)) {
+                                    let totalParcelas = 1;
+                                    const match = pessoa.parcelas ? pessoa.parcelas.match(/(\d+)\/(\d+)/) : null;
+                                    if (match) {
+                                        totalParcelas = parseInt(match[2]);
                                     }
-                                } else {
-                                    if (!pessoa.pago) {
-                                        if (pessoa.parcelas === 'recorrente') {
-                                            if (chaveMes !== chaveAtual) {
-                                                const jaAdicionado = pendencias.some(p => 
-                                                    p.idCompra === idGenerico && p.mes === chaveMes
-                                                );
-                                                
-                                                if (!jaAdicionado) {
-                                                    pendencias.push({
-                                                        mes: chaveMes,
-                                                        nomePessoa: pessoa.nome,
-                                                        nomeCompra: 'Valor direto',
-                                                        valor: pessoa.valor,
-                                                        valorTotal: pessoa.valorTotal || pessoa.valor,
-                                                        parcelas: pessoa.parcelas,
-                                                        tipoTransacao: contaEncontrada.tipoTransacao,
-                                                        idCompra: idGenerico
-                                                    });
-                                                }
-                                            }
-                                        } else {
-                                            if (chaveMes !== chaveAtual) {
-                                                const jaAdicionado = pendencias.some(p => 
-                                                    p.idCompra === idGenerico && p.mes === chaveMes
-                                                );
-                                                
-                                                if (!jaAdicionado) {
-                                                    pendencias.push({
-                                                        mes: chaveMes,
-                                                        nomePessoa: pessoa.nome,
-                                                        nomeCompra: 'Valor direto',
-                                                        valor: pessoa.valor,
-                                                        valorTotal: pessoa.valorTotal || pessoa.valor,
-                                                        parcelas: pessoa.parcelas,
-                                                        tipoTransacao: contaEncontrada.tipoTransacao,
-                                                        idCompra: idGenerico
-                                                    });
-                                                }
-                                            }
-                                        }
+                                    
+                                    recebimentosInfo.set(idGenerico, {
+                                        totalParcelas: totalParcelas,
+                                        parcelasPagas: 0,
+                                        maiorParcelaVista: 0,
+                                        mesesDetalhados: [],
+                                        recorrente: pessoa.parcelas === 'recorrente',
+                                        valorParcela: pessoa.valor,
+                                        valorTotal: pessoa.valorTotal || pessoa.valor,
+                                        nome: 'Valor direto',
+                                        nomePessoa: pessoa.nome === 'Eu' ? 'Devedor' : pessoa.nome
+                                    });
+                                }
+                                
+                                const info = recebimentosInfo.get(idGenerico);
+                                
+                                const match = pessoa.parcelas ? pessoa.parcelas.match(/(\d+)\/(\d+)/) : null;
+                                if (match) {
+                                    const parcelaNum = parseInt(match[1]);
+                                    if (parcelaNum > info.maiorParcelaVista) {
+                                        info.maiorParcelaVista = parcelaNum;
                                     }
+                                }
+                                
+                                info.mesesDetalhados.push({
+                                    mes: chaveMes,
+                                    pago: pessoa.pago,
+                                    parcela: pessoa.parcelas
+                                });
+                                
+                                if (pessoa.pago) {
+                                    info.parcelasPagas++;
                                 }
                             }
                         });
@@ -4442,11 +5636,153 @@ function adicionarNovaCompra(contaId) {
                 }
             });
             
-            // Converter recebimentos rastreados para pendências (apenas os mais antigos)
-            recebimentosRastreados.forEach(pendencia => {
-                // Só adicionar se não for do mês atual
-                if (pendencia.mes !== chaveAtual) {
-                    pendencias.push(pendencia);
+            // SEGUNDA PASSADA: Criar pendências baseado nas informações coletadas
+            recebimentosInfo.forEach((info, idCompra) => {
+                // Para RECEBIMENTOS PARCELADOS:
+                // - Quantas parcelas já deveriam ter sido recebidas = maior parcela vista
+                // - Pendências = maior parcela vista - parcelas pagas
+                // - Máximo = total de parcelas
+                
+                let quantidadePendencias = 0;
+                
+                if (info.recorrente) {
+                    // Recorrente: cada mês não pago é uma pendência
+                    quantidadePendencias = info.mesesDetalhados.length - info.parcelasPagas;
+                } else {
+                    // Parcelado: maior parcela vista - parcelas pagas
+                    // Mas limitado ao total de parcelas
+                    const parcelasQueJaPassaram = Math.min(info.maiorParcelaVista, info.totalParcelas);
+                    quantidadePendencias = parcelasQueJaPassaram - info.parcelasPagas;
+                }
+                
+                if (quantidadePendencias > 0) {
+                    // Adicionar pendências para os meses não pagos (exceto o atual)
+                    let pendenciasAdicionadas = 0;
+                    
+                    info.mesesDetalhados
+                        .filter(m => m.mes !== chaveAtual && !m.pago)
+                        .forEach(mesInfo => {
+                            if (pendenciasAdicionadas < quantidadePendencias) {
+                                pendencias.push({
+                                    mes: mesInfo.mes,
+                                    nomePessoa: info.nomePessoa,
+                                    nomeCompra: info.nome,
+                                    valor: info.valorParcela,
+                                    valorTotal: info.valorTotal,
+                                    parcelas: mesInfo.parcela,
+                                    tipoTransacao: 'recebimento',
+                                    idCompra: idCompra
+                                });
+                                pendenciasAdicionadas++;
+                            }
+                        });
+                }
+            });
+            
+            // PROCESSAR PAGAMENTOS (lógica original - NÃO MEXER)
+            Object.keys(todasContas).sort().forEach(chaveMes => {
+                const [ano, mes] = chaveMes.split('-').map(Number);
+                const dataMes = new Date(ano, mes - 1);
+                
+                if (dataMes <= dataAtualMes) {
+                    const contasMes = todasContas[chaveMes];
+                    const contaEncontrada = contasMes.find(c => c.nome === nomeConta);
+                    
+                    if (contaEncontrada && contaEncontrada.tipoTransacao !== 'recebimento') {
+                        contaEncontrada.pessoas.forEach(pessoa => {
+                            if (pessoa.compras && pessoa.compras.length > 0) {
+                                pessoa.compras.forEach(compra => {
+                                    const idCompra = compra.idUnico || (compra.nome + '_' + compra.dataCompra);
+                                    
+                                    if (!pessoa.pago) {
+                                        if (compra.parcelas === 'recorrente' || pessoa.parcelas === 'recorrente') {
+                                            if (chaveMes !== chaveAtual) {
+                                                const jaAdicionado = pendencias.some(p => 
+                                                    p.idCompra === idCompra && p.mes === chaveMes
+                                                );
+                                                
+                                                if (!jaAdicionado) {
+                                                    pendencias.push({
+                                                        mes: chaveMes,
+                                                        nomePessoa: pessoa.nome,
+                                                        nomeCompra: compra.nome,
+                                                        valor: compra.valorParcela,
+                                                        valorTotal: compra.valorTotal,
+                                                        parcelas: compra.parcelas || pessoa.parcelas,
+                                                        tipoTransacao: contaEncontrada.tipoTransacao,
+                                                        idCompra: idCompra
+                                                    });
+                                                }
+                                            }
+                                        } else {
+                                            if (chaveMes !== chaveAtual) {
+                                                const jaAdicionado = pendencias.some(p => 
+                                                    p.idCompra === idCompra && p.mes === chaveMes
+                                                );
+                                                
+                                                if (!jaAdicionado) {
+                                                    pendencias.push({
+                                                        mes: chaveMes,
+                                                        nomePessoa: pessoa.nome,
+                                                        nomeCompra: compra.nome,
+                                                        valor: compra.valorParcela,
+                                                        valorTotal: compra.valorTotal,
+                                                        parcelas: compra.parcelas || pessoa.parcelas,
+                                                        tipoTransacao: contaEncontrada.tipoTransacao,
+                                                        idCompra: idCompra
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    }
+                                });
+                            } else {
+                                const idGenerico = pessoa.nome + '_' + pessoa.valor + '_' + (pessoa.parcelas || 'unico');
+                                
+                                if (!pessoa.pago) {
+                                    if (pessoa.parcelas === 'recorrente') {
+                                        if (chaveMes !== chaveAtual) {
+                                            const jaAdicionado = pendencias.some(p => 
+                                                p.idCompra === idGenerico && p.mes === chaveMes
+                                            );
+                                            
+                                            if (!jaAdicionado) {
+                                                pendencias.push({
+                                                    mes: chaveMes,
+                                                    nomePessoa: pessoa.nome,
+                                                    nomeCompra: 'Valor direto',
+                                                    valor: pessoa.valor,
+                                                    valorTotal: pessoa.valorTotal || pessoa.valor,
+                                                    parcelas: pessoa.parcelas,
+                                                    tipoTransacao: contaEncontrada.tipoTransacao,
+                                                    idCompra: idGenerico
+                                                });
+                                            }
+                                        }
+                                    } else {
+                                        if (chaveMes !== chaveAtual) {
+                                            const jaAdicionado = pendencias.some(p => 
+                                                p.idCompra === idGenerico && p.mes === chaveMes
+                                            );
+                                            
+                                            if (!jaAdicionado) {
+                                                pendencias.push({
+                                                    mes: chaveMes,
+                                                    nomePessoa: pessoa.nome,
+                                                    nomeCompra: 'Valor direto',
+                                                    valor: pessoa.valor,
+                                                    valorTotal: pessoa.valorTotal || pessoa.valor,
+                                                    parcelas: pessoa.parcelas,
+                                                    tipoTransacao: contaEncontrada.tipoTransacao,
+                                                    idCompra: idGenerico
+                                                });
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                    }
                 }
             });
             
