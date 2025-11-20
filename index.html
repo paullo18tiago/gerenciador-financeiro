@@ -2046,7 +2046,7 @@ function voltarMes() {
                 }
             }
             
-            // SEMPRE verificar status de recebimentos em tempo real
+            // SEMPRE verificar status de recebimentos em tempo
             if (todasContas[chave]) {
                 // Mês existe - carregar e CONSOLIDAR
                 const dadosSalvos = JSON.parse(JSON.stringify(todasContas[chave]));
@@ -2201,9 +2201,20 @@ function voltarMes() {
                 });
                 
             } else {
-                // Criar novo mês
+                // Criar novo mês PRESERVANDO A ORDEM das contas
                 contas = [];
                 const contasMap = new Map();
+                
+                // PRIMEIRO: Determinar ordem das contas do mês mais recente
+                let ordemContas = [];
+                const chavesOrdenadas = Object.keys(todasContas).sort().reverse();
+                
+                for (let chaveMesRef of chavesOrdenadas) {
+                    if (todasContas[chaveMesRef] && todasContas[chaveMesRef].length > 0) {
+                        ordemContas = todasContas[chaveMesRef].map(c => c.nome);
+                        break;
+                    }
+                }
                 
                 Object.keys(todasContas).sort().forEach(chaveMes => {
                     const [ano, mes] = chaveMes.split('-').map(Number);
@@ -2382,16 +2393,43 @@ function voltarMes() {
                     }
                 });
                 
-                // Converter Map para array E CONSOLIDAR
-                contasMap.forEach(conta => {
-                    const pessoasConsolidadas = consolidarPessoasPorNome(conta.pessoas);
-                    
-                    // SEMPRE adicionar a conta, mesmo sem pessoas
-                    contas.push({
-                        ...conta,
-                        pessoas: pessoasConsolidadas
+                // Converter Map para array RESPEITANDO A ORDEM
+                if (ordemContas.length > 0) {
+                    // Usar ordem do mês anterior
+                    ordemContas.forEach(nomeConta => {
+                        if (contasMap.has(nomeConta)) {
+                            const conta = contasMap.get(nomeConta);
+                            const pessoasConsolidadas = consolidarPessoasPorNome(conta.pessoas);
+                            
+                            contas.push({
+                                ...conta,
+                                pessoas: pessoasConsolidadas
+                            });
+                            
+                            contasMap.delete(nomeConta);
+                        }
                     });
-                });
+                    
+                    // Adicionar contas novas que não estavam na ordem
+                    contasMap.forEach(conta => {
+                        const pessoasConsolidadas = consolidarPessoasPorNome(conta.pessoas);
+                        
+                        contas.push({
+                            ...conta,
+                            pessoas: pessoasConsolidadas
+                        });
+                    });
+                } else {
+                    // Sem ordem de referência, usar ordem do Map
+                    contasMap.forEach(conta => {
+                        const pessoasConsolidadas = consolidarPessoasPorNome(conta.pessoas);
+                        
+                        contas.push({
+                            ...conta,
+                            pessoas: pessoasConsolidadas
+                        });
+                    });
+                }
                 
                 // CRÍTICO: Salvar o novo mês criado
                 todasContas[chave] = JSON.parse(JSON.stringify(contas));
@@ -3518,6 +3556,49 @@ function verificarEMigrarVersao() {
             
             // Salvar alterações
             localStorage.setItem('todasContas', JSON.stringify(todasContas));
+        }
+        function removerPessoaDeTodosOsMeses(nomeConta, nomePessoa) {
+            adicionarLog(`🗑️ removerPessoaDeTodosOsMeses INICIADA`, 'importante');
+            adicionarLog(`   Conta: ${nomeConta}, Pessoa: ${nomePessoa}`, 'info');
+            
+            let mesesProcessados = 0;
+            let pessoasRemovidas = 0;
+            
+            // Percorrer TODOS os meses
+            Object.keys(todasContas).forEach(chaveMes => {
+                const contasMes = todasContas[chaveMes];
+                const contaEncontrada = contasMes.find(c => c.nome === nomeConta);
+                
+                if (contaEncontrada) {
+                    mesesProcessados++;
+                    const qtdAntes = contaEncontrada.pessoas.length;
+                    
+                    // Remover a pessoa
+                    contaEncontrada.pessoas = contaEncontrada.pessoas.filter(p => p.nome !== nomePessoa);
+                    
+                    if (contaEncontrada.pessoas.length < qtdAntes) {
+                        pessoasRemovidas++;
+                        adicionarLog(`      Mês ${chaveMes}: Pessoa removida`, 'info');
+                    }
+                    
+                    // Recalcular se a conta está totalmente paga
+                    if (contaEncontrada.pessoas.length === 0) {
+                        contaEncontrada.pago = false;
+                    } else {
+                        const todasPagas = contaEncontrada.pessoas.every(p => p.pago);
+                        contaEncontrada.pago = todasPagas;
+                    }
+                }
+            });
+            
+            adicionarLog(`   📊 Estatísticas:`, 'info');
+            adicionarLog(`      Meses processados: ${mesesProcessados}`, 'info');
+            adicionarLog(`      Pessoas removidas: ${pessoasRemovidas}`, 'info');
+            
+            // Salvar alterações
+            localStorage.setItem('todasContas', JSON.stringify(todasContas));
+            adicionarLog(`   ✅ Alterações salvas no localStorage`, 'success');
+            adicionarLog(`✅ removerPessoaDeTodosOsMeses CONCLUÍDA`, 'importante');
         }
         function excluirCompraDeTodosOsMeses(nomeConta, nomePessoa, idUnicoCompra) {
             adicionarLog(`🗑️ excluirCompraDeTodosOsMeses INICIADA`, 'importante');
@@ -5120,9 +5201,12 @@ function adicionarNovaCompra(contaId) {
                 });
             }
             
+            const nomeContaNovo = document.getElementById('nomeConta').value;
+            const nomeContaAntigo = contaEditando ? contaEditando.nome : null;
+            
             const conta = {
                 id: contaEditando ? contaEditando.id : Date.now(),
-                nome: document.getElementById('nomeConta').value,
+                nome: nomeContaNovo,
                 tipoTransacao: document.getElementById('tipoTransacao').value,
                 tipo: document.getElementById('tipoConta').value,
                 limiteTotal: parseFloat(document.getElementById('limiteTotal').value) || 0,
@@ -5140,6 +5224,41 @@ function adicionarNovaCompra(contaId) {
             if (contaEditando) {
                 const index = contas.findIndex(c => c.id === contaEditando.id);
                 const contaExistente = contas[index];
+                
+                // ==========================================
+                // VERIFICAR SE O NOME DA CONTA MUDOU
+                // ==========================================
+                if (nomeContaAntigo && nomeContaAntigo !== nomeContaNovo) {
+                    adicionarLog(`🔄 NOME DA CONTA MUDOU: "${nomeContaAntigo}" → "${nomeContaNovo}"`, 'importante');
+                    
+                    // Atualizar nome em TODOS os meses
+                    Object.keys(todasContas).forEach(chaveMes => {
+                        const contasMes = todasContas[chaveMes];
+                        const contaEncontrada = contasMes.find(c => c.nome === nomeContaAntigo);
+                        
+                        if (contaEncontrada) {
+                            contaEncontrada.nome = nomeContaNovo;
+                            adicionarLog(`   ✅ Mês ${chaveMes}: Nome atualizado`, 'success');
+                        }
+                    });
+                }
+                
+                // ==========================================
+                // ATUALIZAR PROPRIEDADES DA CONTA EM TODOS OS MESES
+                // ==========================================
+                Object.keys(todasContas).forEach(chaveMes => {
+                    const contasMes = todasContas[chaveMes];
+                    const contaEncontrada = contasMes.find(c => c.nome === nomeContaNovo);
+                    
+                    if (contaEncontrada) {
+                        contaEncontrada.tipo = conta.tipo;
+                        contaEncontrada.tipoTransacao = conta.tipoTransacao;
+                        contaEncontrada.limiteTotal = conta.limiteTotal;
+                        contaEncontrada.diaFechamento = conta.diaFechamento;
+                        contaEncontrada.diaVencimento = conta.diaVencimento;
+                        contaEncontrada.observacoes = conta.observacoes;
+                    }
+                });
                 
                 // NÃO preservar o estado de pagamento - será recalculado ao final
                 
@@ -5169,7 +5288,7 @@ function adicionarNovaCompra(contaId) {
                 
                 // Remover apenas pessoas que foram REALMENTE deletadas de TODOS os meses
                 pessoasRemovidas.forEach(pessoaRemovida => {
-                    removerPessoaDeTodosOsMeses(conta.nome, pessoaRemovida.nome);
+                    removerPessoaDeTodosOsMeses(nomeContaNovo, pessoaRemovida.nome);
                 });
                 
                 // ==========================================
@@ -5194,13 +5313,13 @@ function adicionarNovaCompra(contaId) {
                         // Remover compras antigas de "Eu" de todos os meses
                         if (pessoaEuExistente.compras && pessoaEuExistente.compras.length > 0) {
                             pessoaEuExistente.compras.forEach(compraAntiga => {
-                                excluirCompraDeTodosOsMeses(conta.nome, 'Eu', compraAntiga.idUnico);
+                                excluirCompraDeTodosOsMeses(nomeContaNovo, 'Eu', compraAntiga.idUnico);
                             });
                         }
                         
                         // Adicionar novas compras de "Eu" em todos os meses
                         if (pessoaEuNova && pessoaEuNova.compras && pessoaEuNova.compras.length > 0) {
-                            propagarComprasParaTodosMeses(conta.nome, [pessoaEuNova]);
+                            propagarComprasParaTodosMeses(nomeContaNovo, [pessoaEuNova]);
                         }
                         
                         pessoasFinais.push(pessoaEuNova);
@@ -5209,7 +5328,7 @@ function adicionarNovaCompra(contaId) {
                         const ehCompraEmAndamento = document.getElementById('compraEmAndamento').checked;
                         const jaPagas = ehCompraEmAndamento ? (parseInt(document.getElementById('parcelasJaPagas').value) || 0) : 0;
                         if (jaPagas > 0 && pessoaEuNova) {
-                            adicionarCompraEmAndamentoRetroativa(conta.nome, [pessoaEuNova], jaPagas);
+                            adicionarCompraEmAndamentoRetroativa(nomeContaNovo, [pessoaEuNova], jaPagas);
                         }
                         
                     } else {
@@ -5217,11 +5336,11 @@ function adicionarNovaCompra(contaId) {
                         pessoasFinais.push(pessoaEuNova);
                         
                         if (pessoaEuNova && pessoaEuNova.compras && pessoaEuNova.compras.length > 0) {
-                            propagarComprasParaTodosMeses(conta.nome, [pessoaEuNova]);
+                            propagarComprasParaTodosMeses(nomeContaNovo, [pessoaEuNova]);
                         }
                         
                         if (pessoaEuNova && pessoaEuNova.parcelasJaPagas && pessoaEuNova.parcelasJaPagas > 0) {
-                            adicionarCompraEmAndamentoRetroativa(conta.nome, [pessoaEuNova], pessoaEuNova.parcelasJaPagas);
+                            adicionarCompraEmAndamentoRetroativa(nomeContaNovo, [pessoaEuNova], pessoaEuNova.parcelasJaPagas);
                         }
                     }
                     
@@ -5345,7 +5464,7 @@ function adicionarNovaCompra(contaId) {
                             if (pessoaExistente.compras && pessoaExistente.compras.length > 0) {
                                 adicionarLog(`   🗑️ Removendo ${pessoaExistente.compras.length} compras antigas`, 'info');
                                 pessoaExistente.compras.forEach(compraAntiga => {
-                                    excluirCompraDeTodosOsMeses(conta.nome, novaPessoa.nome, compraAntiga.idUnico);
+                                    excluirCompraDeTodosOsMeses(nomeContaNovo, novaPessoa.nome, compraAntiga.idUnico);
                                 });
                             }
                             
@@ -5357,13 +5476,13 @@ function adicionarNovaCompra(contaId) {
                             // PRIMEIRO: Adicionar parcelas retroativas
                             if (novaPessoa.parcelasJaPagas && novaPessoa.parcelasJaPagas > 0) {
                                 adicionarLog(`   🔄 Processando ${novaPessoa.parcelasJaPagas} parcelas retroativas`, 'warning');
-                                adicionarCompraEmAndamentoRetroativa(conta.nome, [novaPessoa], novaPessoa.parcelasJaPagas);
+                                adicionarCompraEmAndamentoRetroativa(nomeContaNovo, [novaPessoa], novaPessoa.parcelasJaPagas);
                             }
                             
                             // DEPOIS: Propagar para meses futuros
                             if (novaPessoa.compras && novaPessoa.compras.length > 0) {
                                 adicionarLog(`   📤 Propagando ${novaPessoa.compras.length} compras para meses futuros`, 'info');
-                                propagarComprasParaTodosMeses(conta.nome, [novaPessoa]);
+                                propagarComprasParaTodosMeses(nomeContaNovo, [novaPessoa]);
                             }
                         } else {
                             adicionarLog(`✓ Pessoa não foi editada, mantendo: ${novaPessoa.nome}`, 'info');
@@ -5423,13 +5542,13 @@ function adicionarNovaCompra(contaId) {
                         // PRIMEIRO: Adicionar parcelas retroativas (ANTES de propagar)
                         if (novaPessoa.parcelasJaPagas && novaPessoa.parcelasJaPagas > 0) {
                             adicionarLog(`   🔄 Processando ${novaPessoa.parcelasJaPagas} parcelas retroativas ANTES de propagar`, 'warning');
-                            adicionarCompraEmAndamentoRetroativa(conta.nome, [novaPessoa], novaPessoa.parcelasJaPagas);
+                            adicionarCompraEmAndamentoRetroativa(nomeContaNovo, [novaPessoa], novaPessoa.parcelasJaPagas);
                         }
                         
                         // DEPOIS: Propagar para meses futuros
                         if (novaPessoa.compras && novaPessoa.compras.length > 0) {
                             adicionarLog(`   📤 Propagando ${novaPessoa.compras.length} compras para meses futuros`, 'info');
-                            propagarComprasParaTodosMeses(conta.nome, [novaPessoa]);
+                            propagarComprasParaTodosMeses(nomeContaNovo, [novaPessoa]);
                         }
                         
                         conta.pago = false;
@@ -5903,48 +6022,106 @@ function adicionarNovaCompra(contaId) {
             
             let pendencias = [];
             
-            // Mapa para rastrear recebimentos
-            const recebimentosInfo = new Map();
+            // Determinar se é recebimento ou pagamento
+            const contaAtualRef = contas.find(c => c.nome === nomeConta);
+            const ehRecebimento = contaAtualRef && contaAtualRef.tipoTransacao === 'recebimento';
             
-            // PRIMEIRA PASSADA: Coletar informações sobre todos os recebimentos
-            Object.keys(todasContas).sort().forEach(chaveMes => {
-                const [ano, mes] = chaveMes.split('-').map(Number);
-                const dataMes = new Date(ano, mes - 1);
+            if (ehRecebimento) {
+                // ==========================================
+                // LÓGICA PARA RECEBIMENTOS
+                // ==========================================
                 
-                if (dataMes <= dataAtualMes) {
-                    const contasMes = todasContas[chaveMes];
-                    const contaEncontrada = contasMes.find(c => c.nome === nomeConta);
+                const recebimentosInfo = new Map();
+                
+                // PRIMEIRA PASSADA: Coletar informações sobre todos os recebimentos
+                Object.keys(todasContas).sort().forEach(chaveMes => {
+                    const [ano, mes] = chaveMes.split('-').map(Number);
+                    const dataMes = new Date(ano, mes - 1);
                     
-                    if (contaEncontrada && contaEncontrada.tipoTransacao === 'recebimento') {
-                        contaEncontrada.pessoas.forEach(pessoa => {
-                            if (pessoa.compras && pessoa.compras.length > 0) {
-                                pessoa.compras.forEach(compra => {
-                                    const idCompra = compra.idUnico || (compra.nome + '_' + compra.dataCompra);
-                                    
-                                    if (!recebimentosInfo.has(idCompra)) {
-                                        let totalParcelas = 1;
+                    if (dataMes <= dataAtualMes) {
+                        const contasMes = todasContas[chaveMes];
+                        const contaEncontrada = contasMes.find(c => c.nome === nomeConta);
+                        
+                        if (contaEncontrada) {
+                            contaEncontrada.pessoas.forEach(pessoa => {
+                                if (pessoa.compras && pessoa.compras.length > 0) {
+                                    pessoa.compras.forEach(compra => {
+                                        const idCompra = compra.idUnico || (compra.nome + '_' + compra.dataCompra);
+                                        
+                                        if (!recebimentosInfo.has(idCompra)) {
+                                            let totalParcelas = 1;
+                                            const match = compra.parcelas ? compra.parcelas.match(/(\d+)\/(\d+)/) : null;
+                                            if (match) {
+                                                totalParcelas = parseInt(match[2]);
+                                            }
+                                            
+                                            recebimentosInfo.set(idCompra, {
+                                                totalParcelas: totalParcelas,
+                                                parcelasPagas: 0,
+                                                maiorParcelaVista: 0,
+                                                mesesDetalhados: [],
+                                                recorrente: compra.parcelas === 'recorrente',
+                                                ehParcelaUnica: !compra.parcelas || compra.parcelas === '',
+                                                valorParcela: compra.valorParcela,
+                                                valorTotal: compra.valorTotal,
+                                                nome: compra.nome,
+                                                nomePessoa: pessoa.nome === 'Eu' ? 'Devedor' : pessoa.nome,
+                                                mesOrigem: chaveMes
+                                            });
+                                        }
+                                        
+                                        const info = recebimentosInfo.get(idCompra);
+                                        
+                                        // Rastrear qual é a maior parcela vista até agora
                                         const match = compra.parcelas ? compra.parcelas.match(/(\d+)\/(\d+)/) : null;
+                                        if (match) {
+                                            const parcelaNum = parseInt(match[1]);
+                                            if (parcelaNum > info.maiorParcelaVista) {
+                                                info.maiorParcelaVista = parcelaNum;
+                                            }
+                                        }
+                                        
+                                        // Registrar detalhes deste mês
+                                        info.mesesDetalhados.push({
+                                            mes: chaveMes,
+                                            pago: pessoa.pago,
+                                            parcela: compra.parcelas
+                                        });
+                                        
+                                        // Contar se foi pago
+                                        if (pessoa.pago) {
+                                            info.parcelasPagas++;
+                                        }
+                                    });
+                                } else {
+                                    // Pessoa sem compras detalhadas
+                                    const idGenerico = pessoa.nome + '_' + pessoa.valor + '_' + (pessoa.parcelas || 'unico');
+                                    
+                                    if (!recebimentosInfo.has(idGenerico)) {
+                                        let totalParcelas = 1;
+                                        const match = pessoa.parcelas ? pessoa.parcelas.match(/(\d+)\/(\d+)/) : null;
                                         if (match) {
                                             totalParcelas = parseInt(match[2]);
                                         }
                                         
-                                        recebimentosInfo.set(idCompra, {
+                                        recebimentosInfo.set(idGenerico, {
                                             totalParcelas: totalParcelas,
                                             parcelasPagas: 0,
                                             maiorParcelaVista: 0,
                                             mesesDetalhados: [],
-                                            recorrente: compra.parcelas === 'recorrente',
-                                            valorParcela: compra.valorParcela,
-                                            valorTotal: compra.valorTotal,
-                                            nome: compra.nome,
-                                            nomePessoa: pessoa.nome === 'Eu' ? 'Devedor' : pessoa.nome
+                                            recorrente: pessoa.parcelas === 'recorrente',
+                                            ehParcelaUnica: !pessoa.parcelas || pessoa.parcelas === '',
+                                            valorParcela: pessoa.valor,
+                                            valorTotal: pessoa.valorTotal || pessoa.valor,
+                                            nome: 'Valor direto',
+                                            nomePessoa: pessoa.nome === 'Eu' ? 'Devedor' : pessoa.nome,
+                                            mesOrigem: chaveMes
                                         });
                                     }
                                     
-                                    const info = recebimentosInfo.get(idCompra);
+                                    const info = recebimentosInfo.get(idGenerico);
                                     
-                                    // Rastrear qual é a maior parcela vista até agora
-                                    const match = compra.parcelas ? compra.parcelas.match(/(\d+)\/(\d+)/) : null;
+                                    const match = pessoa.parcelas ? pessoa.parcelas.match(/(\d+)\/(\d+)/) : null;
                                     if (match) {
                                         const parcelaNum = parseInt(match[1]);
                                         if (parcelaNum > info.maiorParcelaVista) {
@@ -5952,216 +6129,176 @@ function adicionarNovaCompra(contaId) {
                                         }
                                     }
                                     
-                                    // Registrar detalhes deste mês
                                     info.mesesDetalhados.push({
                                         mes: chaveMes,
                                         pago: pessoa.pago,
-                                        parcela: compra.parcelas
+                                        parcela: pessoa.parcelas
                                     });
                                     
-                                    // Contar se foi pago
                                     if (pessoa.pago) {
                                         info.parcelasPagas++;
                                     }
-                                });
-                            } else {
-                                // Pessoa sem compras detalhadas
-                                const idGenerico = pessoa.nome + '_' + pessoa.valor + '_' + (pessoa.parcelas || 'unico');
-                                
-                                if (!recebimentosInfo.has(idGenerico)) {
-                                    let totalParcelas = 1;
-                                    const match = pessoa.parcelas ? pessoa.parcelas.match(/(\d+)\/(\d+)/) : null;
-                                    if (match) {
-                                        totalParcelas = parseInt(match[2]);
-                                    }
-                                    
-                                    recebimentosInfo.set(idGenerico, {
-                                        totalParcelas: totalParcelas,
-                                        parcelasPagas: 0,
-                                        maiorParcelaVista: 0,
-                                        mesesDetalhados: [],
-                                        recorrente: pessoa.parcelas === 'recorrente',
-                                        valorParcela: pessoa.valor,
-                                        valorTotal: pessoa.valorTotal || pessoa.valor,
-                                        nome: 'Valor direto',
-                                        nomePessoa: pessoa.nome === 'Eu' ? 'Devedor' : pessoa.nome
-                                    });
                                 }
-                                
-                                const info = recebimentosInfo.get(idGenerico);
-                                
-                                const match = pessoa.parcelas ? pessoa.parcelas.match(/(\d+)\/(\d+)/) : null;
-                                if (match) {
-                                    const parcelaNum = parseInt(match[1]);
-                                    if (parcelaNum > info.maiorParcelaVista) {
-                                        info.maiorParcelaVista = parcelaNum;
-                                    }
-                                }
-                                
-                                info.mesesDetalhados.push({
-                                    mes: chaveMes,
-                                    pago: pessoa.pago,
-                                    parcela: pessoa.parcelas
-                                });
-                                
-                                if (pessoa.pago) {
-                                    info.parcelasPagas++;
-                                }
-                            }
-                        });
+                            });
+                        }
                     }
-                }
-            });
-            
-            // SEGUNDA PASSADA: Criar pendências baseado nas informações coletadas
-            recebimentosInfo.forEach((info, idCompra) => {
-                // Para RECEBIMENTOS PARCELADOS:
-                // - Quantas parcelas já deveriam ter sido recebidas = maior parcela vista
-                // - Pendências = maior parcela vista - parcelas pagas
-                // - Máximo = total de parcelas
+                });
                 
-                let quantidadePendencias = 0;
-                
-                if (info.recorrente) {
-                    // Recorrente: cada mês não pago é uma pendência
-                    quantidadePendencias = info.mesesDetalhados.length - info.parcelasPagas;
-                } else {
-                    // Parcelado: maior parcela vista - parcelas pagas
-                    // Mas limitado ao total de parcelas
-                    const parcelasQueJaPassaram = Math.min(info.maiorParcelaVista, info.totalParcelas);
-                    quantidadePendencias = parcelasQueJaPassaram - info.parcelasPagas;
-                }
-                
-                if (quantidadePendencias > 0) {
-                    // Adicionar pendências para os meses não pagos (exceto o atual)
-                    let pendenciasAdicionadas = 0;
+                // SEGUNDA PASSADA: Criar pendências baseado nas informações coletadas
+                recebimentosInfo.forEach((info, idCompra) => {
+                    let quantidadePendencias = 0;
                     
-                    info.mesesDetalhados
-                        .filter(m => m.mes !== chaveAtual && !m.pago)
-                        .forEach(mesInfo => {
-                            if (pendenciasAdicionadas < quantidadePendencias) {
-                                pendencias.push({
-                                    mes: mesInfo.mes,
-                                    nomePessoa: info.nomePessoa,
-                                    nomeCompra: info.nome,
-                                    valor: info.valorParcela,
-                                    valorTotal: info.valorTotal,
-                                    parcelas: mesInfo.parcela,
-                                    tipoTransacao: 'recebimento',
-                                    idCompra: idCompra
-                                });
-                                pendenciasAdicionadas++;
-                            }
-                        });
-                }
-            });
-            
-            // PROCESSAR PAGAMENTOS (lógica original - NÃO MEXER)
-            Object.keys(todasContas).sort().forEach(chaveMes => {
-                const [ano, mes] = chaveMes.split('-').map(Number);
-                const dataMes = new Date(ano, mes - 1);
-                
-                if (dataMes <= dataAtualMes) {
-                    const contasMes = todasContas[chaveMes];
-                    const contaEncontrada = contasMes.find(c => c.nome === nomeConta);
+                    if (info.recorrente) {
+                        // Recorrente: cada mês não pago é uma pendência
+                        quantidadePendencias = info.mesesDetalhados.filter(m => !m.pago).length;
+                    } else if (info.ehParcelaUnica) {
+                        // *** CORREÇÃO PRINCIPAL: Parcela única ***
+                        // Se NÃO foi pago em nenhum mês anterior (exceto atual), é pendência
+                        const foiPagoEmMesAnterior = info.mesesDetalhados.some(m => m.mes !== chaveAtual && m.pago);
+                        if (!foiPagoEmMesAnterior && info.mesOrigem !== chaveAtual) {
+                            quantidadePendencias = 1;
+                        }
+                    } else {
+                        // Parcelado: maior parcela vista - parcelas pagas
+                        const parcelasQueJaPassaram = Math.min(info.maiorParcelaVista, info.totalParcelas);
+                        quantidadePendencias = parcelasQueJaPassaram - info.parcelasPagas;
+                    }
                     
-                    if (contaEncontrada && contaEncontrada.tipoTransacao !== 'recebimento') {
-                        contaEncontrada.pessoas.forEach(pessoa => {
-                            if (pessoa.compras && pessoa.compras.length > 0) {
-                                pessoa.compras.forEach(compra => {
-                                    const idCompra = compra.idUnico || (compra.nome + '_' + compra.dataCompra);
+                    if (quantidadePendencias > 0) {
+                        // Adicionar pendências para os meses não pagos (exceto o atual)
+                        let pendenciasAdicionadas = 0;
+                        
+                        info.mesesDetalhados
+                            .filter(m => m.mes !== chaveAtual && !m.pago)
+                            .forEach(mesInfo => {
+                                if (pendenciasAdicionadas < quantidadePendencias) {
+                                    pendencias.push({
+                                        mes: mesInfo.mes,
+                                        nomePessoa: info.nomePessoa,
+                                        nomeCompra: info.nome,
+                                        valor: info.valorParcela,
+                                        valorTotal: info.valorTotal,
+                                        parcelas: mesInfo.parcela,
+                                        tipoTransacao: 'recebimento',
+                                        idCompra: idCompra
+                                    });
+                                    pendenciasAdicionadas++;
+                                }
+                            });
+                    }
+                });
+                
+            } else {
+                // ==========================================
+                // LÓGICA PARA PAGAMENTOS (ORIGINAL)
+                // ==========================================
+                
+                Object.keys(todasContas).sort().forEach(chaveMes => {
+                    const [ano, mes] = chaveMes.split('-').map(Number);
+                    const dataMes = new Date(ano, mes - 1);
+                    
+                    if (dataMes <= dataAtualMes) {
+                        const contasMes = todasContas[chaveMes];
+                        const contaEncontrada = contasMes.find(c => c.nome === nomeConta);
+                        
+                        if (contaEncontrada) {
+                            contaEncontrada.pessoas.forEach(pessoa => {
+                                if (pessoa.compras && pessoa.compras.length > 0) {
+                                    pessoa.compras.forEach(compra => {
+                                        const idCompra = compra.idUnico || (compra.nome + '_' + compra.dataCompra);
+                                        
+                                        if (!pessoa.pago) {
+                                            if (compra.parcelas === 'recorrente' || pessoa.parcelas === 'recorrente') {
+                                                if (chaveMes !== chaveAtual) {
+                                                    const jaAdicionado = pendencias.some(p => 
+                                                        p.idCompra === idCompra && p.mes === chaveMes
+                                                    );
+                                                    
+                                                    if (!jaAdicionado) {
+                                                        pendencias.push({
+                                                            mes: chaveMes,
+                                                            nomePessoa: pessoa.nome,
+                                                            nomeCompra: compra.nome,
+                                                            valor: compra.valorParcela,
+                                                            valorTotal: compra.valorTotal,
+                                                            parcelas: compra.parcelas || pessoa.parcelas,
+                                                            tipoTransacao: contaEncontrada.tipoTransacao,
+                                                            idCompra: idCompra
+                                                        });
+                                                    }
+                                                }
+                                            } else {
+                                                if (chaveMes !== chaveAtual) {
+                                                    const jaAdicionado = pendencias.some(p => 
+                                                        p.idCompra === idCompra && p.mes === chaveMes
+                                                    );
+                                                    
+                                                    if (!jaAdicionado) {
+                                                        pendencias.push({
+                                                            mes: chaveMes,
+                                                            nomePessoa: pessoa.nome,
+                                                            nomeCompra: compra.nome,
+                                                            valor: compra.valorParcela,
+                                                            valorTotal: compra.valorTotal,
+                                                            parcelas: compra.parcelas || pessoa.parcelas,
+                                                            tipoTransacao: contaEncontrada.tipoTransacao,
+                                                            idCompra: idCompra
+                                                        });
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    });
+                                } else {
+                                    const idGenerico = pessoa.nome + '_' + pessoa.valor + '_' + (pessoa.parcelas || 'unico');
                                     
                                     if (!pessoa.pago) {
-                                        if (compra.parcelas === 'recorrente' || pessoa.parcelas === 'recorrente') {
+                                        if (pessoa.parcelas === 'recorrente') {
                                             if (chaveMes !== chaveAtual) {
                                                 const jaAdicionado = pendencias.some(p => 
-                                                    p.idCompra === idCompra && p.mes === chaveMes
+                                                    p.idCompra === idGenerico && p.mes === chaveMes
                                                 );
                                                 
                                                 if (!jaAdicionado) {
                                                     pendencias.push({
                                                         mes: chaveMes,
                                                         nomePessoa: pessoa.nome,
-                                                        nomeCompra: compra.nome,
-                                                        valor: compra.valorParcela,
-                                                        valorTotal: compra.valorTotal,
-                                                        parcelas: compra.parcelas || pessoa.parcelas,
+                                                        nomeCompra: 'Valor direto',
+                                                        valor: pessoa.valor,
+                                                        valorTotal: pessoa.valorTotal || pessoa.valor,
+                                                        parcelas: pessoa.parcelas,
                                                         tipoTransacao: contaEncontrada.tipoTransacao,
-                                                        idCompra: idCompra
+                                                        idCompra: idGenerico
                                                     });
                                                 }
                                             }
                                         } else {
                                             if (chaveMes !== chaveAtual) {
                                                 const jaAdicionado = pendencias.some(p => 
-                                                    p.idCompra === idCompra && p.mes === chaveMes
+                                                    p.idCompra === idGenerico && p.mes === chaveMes
                                                 );
                                                 
                                                 if (!jaAdicionado) {
                                                     pendencias.push({
                                                         mes: chaveMes,
                                                         nomePessoa: pessoa.nome,
-                                                        nomeCompra: compra.nome,
-                                                        valor: compra.valorParcela,
-                                                        valorTotal: compra.valorTotal,
-                                                        parcelas: compra.parcelas || pessoa.parcelas,
+                                                        nomeCompra: 'Valor direto',
+                                                        valor: pessoa.valor,
+                                                        valorTotal: pessoa.valorTotal || pessoa.valor,
+                                                        parcelas: pessoa.parcelas,
                                                         tipoTransacao: contaEncontrada.tipoTransacao,
-                                                        idCompra: idCompra
+                                                        idCompra: idGenerico
                                                     });
                                                 }
                                             }
                                         }
                                     }
-                                });
-                            } else {
-                                const idGenerico = pessoa.nome + '_' + pessoa.valor + '_' + (pessoa.parcelas || 'unico');
-                                
-                                if (!pessoa.pago) {
-                                    if (pessoa.parcelas === 'recorrente') {
-                                        if (chaveMes !== chaveAtual) {
-                                            const jaAdicionado = pendencias.some(p => 
-                                                p.idCompra === idGenerico && p.mes === chaveMes
-                                            );
-                                            
-                                            if (!jaAdicionado) {
-                                                pendencias.push({
-                                                    mes: chaveMes,
-                                                    nomePessoa: pessoa.nome,
-                                                    nomeCompra: 'Valor direto',
-                                                    valor: pessoa.valor,
-                                                    valorTotal: pessoa.valorTotal || pessoa.valor,
-                                                    parcelas: pessoa.parcelas,
-                                                    tipoTransacao: contaEncontrada.tipoTransacao,
-                                                    idCompra: idGenerico
-                                                });
-                                            }
-                                        }
-                                    } else {
-                                        if (chaveMes !== chaveAtual) {
-                                            const jaAdicionado = pendencias.some(p => 
-                                                p.idCompra === idGenerico && p.mes === chaveMes
-                                            );
-                                            
-                                            if (!jaAdicionado) {
-                                                pendencias.push({
-                                                    mes: chaveMes,
-                                                    nomePessoa: pessoa.nome,
-                                                    nomeCompra: 'Valor direto',
-                                                    valor: pessoa.valor,
-                                                    valorTotal: pessoa.valorTotal || pessoa.valor,
-                                                    parcelas: pessoa.parcelas,
-                                                    tipoTransacao: contaEncontrada.tipoTransacao,
-                                                    idCompra: idGenerico
-                                                });
-                                            }
-                                        }
-                                    }
                                 }
-                            }
-                        });
+                            });
+                        }
                     }
-                }
-            });
+                });
+            }
             
             return pendencias;
         }
