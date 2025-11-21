@@ -8,15 +8,9 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="GF">
-    <link rel="mask-icon" href="icon-192.png" color="#667eea">
-    <meta name="msapplication-TileImage" content="icon-192.png">
-    <meta name="msapplication-TileColor" content="#667eea">
     <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
     <link rel="apple-touch-icon" href="icon-192.png">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-    <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
-    <link rel="shortcut icon" href="icon-192.png">
     <title>Gerenciador Financeiro</title>
     <style>
         * {
@@ -1662,7 +1656,7 @@
     </div>
 
     <!-- BOTÃO FLUTUANTE DE DEBUG -->
-    <button id="btnDebug" onclick="toggleDebug()" style="position: fixed; top: 23px; left: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 10px 14px; border-radius: 50px; cursor: pointer; font-size: 13px; font-weight: bold; box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5); z-index: 4999; transition: all 0.3s; display: none;">  <!-- o "display: none" é responsável por desativar o sistema Debug, para reativar é só removê-lo -->
+    <button id="btnDebug" onclick="toggleDebug()" style="position: fixed; top: 23px; left: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 10px 14px; border-radius: 50px; cursor: pointer; font-size: 13px; font-weight: bold; box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5); z-index: 4999; transition: all 0.3s;">  <!-- o "display: none" é responsável por desativar o sistema Debug, para reativar é só removê-lo -->
         🐛 DEBUG
     </button>
     <div class="modal-limpar" id="modalLimpar">
@@ -2346,7 +2340,7 @@ function voltarMes() {
                                         }
                                     }
                                 } else {
-                                    // PAGAMENTOS
+                                    // *** CORREÇÃO CRÍTICA: PAGAMENTOS ***
                                     if (pessoa.parcelas === 'recorrente') {
                                         contaAtual.pessoas.push({
                                             ...pessoa,
@@ -2357,33 +2351,62 @@ function voltarMes() {
                                         if (match) {
                                             const parcelaOriginalDoMes = parseInt(match[1]);
                                             const totalParcelas = parseInt(match[2]);
-                                            const parcelaNoMesAtual = parcelaOriginalDoMes + diffMesesDesdeOrigem;
                                             
-                                            if (parcelaNoMesAtual <= totalParcelas) {
-                                                if (pessoa.compras && pessoa.compras.length > 0) {
-                                                    pessoa.compras.forEach(compra => {
-                                                        const compraMatch = compra.parcelas ? compra.parcelas.match(/(\d+)\/(\d+)/) : null;
-                                                        if (compraMatch) {
-                                                            const compraParcelaOrig = parseInt(compraMatch[1]);
-                                                            const compraTotalParc = parseInt(compraMatch[2]);
-                                                            const compraParcelaAtual = compraParcelaOrig + diffMesesDesdeOrigem;
-                                                            
-                                                            if (compraParcelaAtual <= compraTotalParc) {
-                                                                contaAtual.pessoas.push({
-                                                                    nome: pessoa.nome,
-                                                                    valor: compra.valorParcela,
-                                                                    valorTotal: compra.valorTotal,
-                                                                    parcelas: `${parcelaNoMesAtual}/${totalParcelas}`,
-                                                                    compras: [{
-                                                                        ...compra,
-                                                                        parcelas: `${compraParcelaAtual}/${compraTotalParc}`
-                                                                    }],
-                                                                    pago: false
-                                                                });
-                                                            }
-                                                        }
-                                                    });
-                                                } else {
+                                            // *** USAR _parcelaBase SE EXISTIR ***
+                                            let parcelaBase = parcelaOriginalDoMes;
+                                            let mesBase = chaveMes;
+                                            
+                                            // CRÍTICO: Verificar TODAS as compras da pessoa
+                                            if (pessoa.compras && pessoa.compras.length > 0) {
+                                                pessoa.compras.forEach(compra => {
+                                                    // Usar parcela base SE existir
+                                                    let compraParcelaBase = parcelaOriginalDoMes;
+                                                    let compraMesBase = chaveMes;
+                                                    
+                                                    if (compra._parcelaBase && compra._mesBase) {
+                                                        compraParcelaBase = compra._parcelaBase;
+                                                        compraMesBase = compra._mesBase;
+                                                    }
+                                                    
+                                                    // Calcular diferença de meses desde o mês base DA COMPRA
+                                                    const [anoBase, mesBase_] = compraMesBase.split('-').map(Number);
+                                                    const diffMesesDesdeMesBase = (anoAtual - anoBase) * 12 + (mesAtualNum - mesBase_);
+                                                    
+                                                    const parcelaNoMesAtual = compraParcelaBase + diffMesesDesdeMesBase;
+                                                    
+                                                    // Verificar total de parcelas DA COMPRA ESPECÍFICA
+                                                    const compraMatch = compra.parcelas ? compra.parcelas.match(/(\d+)\/(\d+)/) : null;
+                                                    const compraTotalParc = compraMatch ? parseInt(compraMatch[2]) : totalParcelas;
+                                                    
+                                                    if (parcelaNoMesAtual <= compraTotalParc && parcelaNoMesAtual > 0) {
+                                                        contaAtual.pessoas.push({
+                                                            nome: pessoa.nome,
+                                                            valor: compra.valorParcela,
+                                                            valorTotal: compra.valorTotal,
+                                                            parcelas: `${parcelaNoMesAtual}/${compraTotalParc}`,
+                                                            compras: [{
+                                                                ...compra,
+                                                                parcelas: `${parcelaNoMesAtual}/${compraTotalParc}`,
+                                                                _parcelaBase: compraParcelaBase,
+                                                                _mesBase: compraMesBase
+                                                            }],
+                                                            pago: false
+                                                        });
+                                                    }
+                                                });
+                                            } else {
+                                                // Sem compras detalhadas - usar lógica antiga
+                                                if (pessoa._parcelaBase && pessoa._mesBase) {
+                                                    parcelaBase = pessoa._parcelaBase;
+                                                    mesBase = pessoa._mesBase;
+                                                }
+                                                
+                                                const [anoBase, mesBase_] = mesBase.split('-').map(Number);
+                                                const diffMesesDesdeMesBase = (anoAtual - anoBase) * 12 + (mesAtualNum - mesBase_);
+                                                
+                                                const parcelaNoMesAtual = parcelaBase + diffMesesDesdeMesBase;
+                                                
+                                                if (parcelaNoMesAtual <= totalParcelas && parcelaNoMesAtual > 0) {
                                                     contaAtual.pessoas.push({
                                                         ...pessoa,
                                                         parcelas: `${parcelaNoMesAtual}/${totalParcelas}`,
