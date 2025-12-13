@@ -256,6 +256,22 @@
             outline: none;
             border-color: #667eea;
         }
+        
+        .form-grupo textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-grupo textarea {
+            width: 100%;
+            padding: 8px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 13px;
+            transition: border 0.3s;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            resize: vertical;
+        }
 
         .checkbox-group {
             display: flex;
@@ -1577,7 +1593,7 @@
                 </div>
 <div class="form-grupo" id="grupoObservacoes">
                     <label>Observações:</label>
-                    <input type="text" id="observacoes" placeholder="Ex: Pagamento quinzenal, PIX, etc...">
+                    <textarea id="observacoes" placeholder="Ex: Pagamento quinzenal, PIX, etc...&#10;Pressione Enter para nova linha" rows="3" style="width: 100%; padding: 8px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 13px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; resize: vertical; transition: border 0.3s;"></textarea>
                 </div>
                 <div class="form-grupo">
                     <label>Outras Pessoas/Parcelas:</label>
@@ -2965,7 +2981,7 @@ function verificarEMigrarVersao() {
             
             conteudo += '<div class="form-grupo-modal">';
             conteudo += '<label>Observações:</label>';
-            conteudo += '<input type="text" id="observacoesAddForm" placeholder="Ex: Pagamento quinzenal, PIX, etc...">';
+            conteudo += '<textarea id="observacoesAddForm" placeholder="Ex: Pagamento quinzenal, PIX, etc...&#10;Pressione Enter para nova linha" rows="3" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; font-family: \'Segoe UI\', Tahoma, Geneva, Verdana, sans-serif; resize: vertical; transition: border 0.3s;"></textarea>';
             conteudo += '</div>';
             
             conteudo += '<div class="form-acoes-modal">';
@@ -4554,7 +4570,7 @@ function adicionarNovaCompra(contaId) {
             
             conteudo += '<div class="form-grupo-modal">';
             conteudo += '<label>Observações:</label>';
-            conteudo += '<input type="text" id="observacoesForm" placeholder="Ex: Pagamento quinzenal, PIX, etc...">';
+            conteudo += '<textarea id="observacoesForm" placeholder="Ex: Pagamento quinzenal, PIX, etc...&#10;Pressione Enter para nova linha" rows="3" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; font-family: \'Segoe UI\', Tahoma, Geneva, Verdana, sans-serif; resize: vertical; transition: border 0.3s;"></textarea>';
             conteudo += '</div>';
             
             conteudo += '<div class="form-acoes-modal">';
@@ -4876,7 +4892,7 @@ function adicionarNovaCompra(contaId) {
             conteudo += '<div class="form-grupo-modal">';
             conteudo += '<label>Observações:</label>';
             const observacoes = (pessoa.compras && pessoa.compras[0] && pessoa.compras[0].observacoes) ? pessoa.compras[0].observacoes : (pessoa.observacoes || '');
-            conteudo += `<input type="text" id="observacoesEditTemp" placeholder="Ex: Pagamento quinzenal, PIX, etc..." value="${observacoes}">`;
+            conteudo += `<textarea id="observacoesEditTemp" placeholder="Ex: Pagamento quinzenal, PIX, etc...&#10;Pressione Enter para nova linha" rows="3" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; resize: vertical; transition: border 0.3s;">${observacoes}</textarea>`;
             conteudo += '</div>';
             
             // ADICIONAR campos hidden para preservar parcela base e mês base
@@ -5897,7 +5913,7 @@ function adicionarNovaCompra(contaId) {
                             ${observacoes ? `
                             <div class="detalhes-compra-info-item" style="grid-column: 1 / -1;">
                                 <div class="detalhes-compra-info-label">📝 Observações</div>
-                                <div style="color: #666; font-size: 12px;">${observacoes}</div>
+                                <div style="color: #666; font-size: 12px; white-space: pre-wrap; word-break: break-word;">${observacoes}</div>
                             </div>
                             ` : ''}
                         </div>
@@ -6715,6 +6731,29 @@ function mostrarDetalhesValor(contaId) {
                     history.pushState(null, null, location.href);
                 }
             }
+        });
+        
+        // ===== PREVENIR SUBMIT COM ENTER NO TEXTAREA =====
+        document.addEventListener('DOMContentLoaded', function() {
+            document.addEventListener('keydown', function(e) {
+                // Se o elemento focado é um textarea e a tecla pressionada é Enter
+                if (e.target.tagName === 'TEXTAREA' && e.key === 'Enter') {
+                    // Não fazer nada, deixar o Enter funcionar normalmente no textarea
+                    return;
+                }
+            });
+            
+            // Prevenir submit do formulário ao pressionar Enter em qualquer campo
+            const forms = document.querySelectorAll('form');
+            forms.forEach(form => {
+                form.addEventListener('keydown', function(e) {
+                    // Se a tecla é Enter E não é um textarea
+                    if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') {
+                        e.preventDefault();
+                        return false;
+                    }
+                });
+            });
         });
         
         // ===== PWA: REGISTRAR SERVICE WORKER =====
