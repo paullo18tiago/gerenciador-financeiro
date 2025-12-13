@@ -28,7 +28,10 @@
 
         .container {
             max-width: 800px;
-            margin: 18px 3px;        /* ← primeiro valor = topo/fundo, segundo = lados */
+            margin-top: 5px;
+            margin-bottom: 18px;
+            margin-left: 0px;   /* ← AJUSTE AQUI: borda ESQUERDA do Conteiner Geral*/
+            margin-right: -4px;   /* ← AJUSTE AQUI: borda DIREITA do Conteiner Geral*/
             background: white;
             border-radius: 20px;
             padding: 27px;
@@ -72,21 +75,27 @@
         }
 
         .conta {
-            background: #f8f9fa;
+            background: #ffffff;
             border-radius: 10px;
             padding: 14px;
             margin-bottom: 12px;
-            border-left: 4px solid #667eea;
             position: relative;
+            border: 1px solid #c0c0c0;  /* ← AJUSTAR o contraste da borda dos Conteiners*/
+            border-left: 4px solid #667eea;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.12);
         }
 
         .conta.pago {
             opacity: 0.7;
-            border-left-color: #28a745;
+            background: #f1f8f4;
+            border-color: #c3e6cb;
+            border-left: 4px solid #28a745;
         }
 
         .conta.recebimento {
-            border-left-color: #28a745;
+            background: #ffffff;
+            border-color: #c3e6cb;
+            border-left: 4px solid #28a745;
         }
 
         .conta-header {
@@ -288,6 +297,7 @@
             padding: 12px;
             border-radius: 8px;
             margin-top: 8px;
+            border: 1px solid #e0e0e0;
         }
 
         .pessoa-item {
@@ -299,6 +309,8 @@
             border-radius: 6px;
             margin-bottom: 8px;
             font-size: 13px;
+            border: 1px solid #e0e0e0;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
         }
 
         .btn-remover {
@@ -1381,6 +1393,7 @@
             font-size: 14px;
             color: #666;
         }
+        
         .modal-limpar {
             display: none;
             position: fixed;
@@ -1472,6 +1485,60 @@
         .btn-limpar-cancelar:hover {
             background: #5a6268;
         }
+        
+        .conta-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 2px;  /* ← AJUSTAR espaço/espaçamento entre os conteiners */
+            margin-left: -22px;  /* ← AJUSTAR espaço/espaçamento entre as setas e a borda esquerda */
+        }
+        
+        .conta-setas {
+            display: flex;
+            flex-direction: column;
+            gap: 25px;
+            margin-left: 0;
+        }
+        
+        .btn-seta {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            width: 13px;
+            height: 22px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 10px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+            box-shadow: 0 1px 4px rgba(102, 126, 234, 0.3);
+            padding: 0;
+        }
+        
+        .btn-seta:hover {
+            transform: scale(1.1);
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.5);
+        }
+        
+        .btn-seta:active {
+            transform: scale(1);
+        }
+        
+        .btn-seta:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .conta-conteudo {
+            flex: 1;
+            margin-right: -12px;  /* ← AJUSTAR o espaço da borda DIREITA dos Conteiners*/
+        }
+        
     </style>
 </head>
 <body>
@@ -6640,12 +6707,20 @@ function mostrarDetalhesValor(contaId) {
                 return;
             }
             
-            lista.innerHTML = contas.map(conta => {
+            lista.innerHTML = contas.map((conta, index) => {
                 const total = calcularTotal(conta);
                 const limiteDisp = calcularLimiteDisponivel(conta);
+                const ehPrimeiro = index === 0;
+                const ehUltimo = index === contas.length - 1;
                 
                 return `
-                    <div class="conta ${conta.pago ? 'pago' : ''} ${conta.tipoTransacao === 'recebimento' ? 'recebimento' : ''}">
+                    <div class="conta-wrapper">
+                        <div class="conta-setas">
+                            <button class="btn-seta" onclick="moverContaCima(${conta.id})" ${ehPrimeiro ? 'disabled' : ''} title="Mover para cima">▲</button>
+                            <button class="btn-seta" onclick="moverContaBaixo(${conta.id})" ${ehUltimo ? 'disabled' : ''} title="Mover para baixo">▼</button>
+                        </div>
+                        <div class="conta-conteudo">
+                            <div class="conta ${conta.pago ? 'pago' : ''} ${conta.tipoTransacao === 'recebimento' ? 'recebimento' : ''}" data-conta-id="${conta.id}">
                         <div class="conta-header">
                             <div>
                                 <span class="conta-nome">${conta.tipoTransacao === 'recebimento' ? '💰' : '➡️'} ${conta.nome}</span>
@@ -6688,15 +6763,19 @@ function mostrarDetalhesValor(contaId) {
                             </div>
                         ` : ''}
                         
-                        <div class="acoes">
+                        <div class="acoes" style="${conta.pessoas && conta.pessoas.length > 0 ? '' : 'justify-content: center;'}">
+                            ${conta.pessoas && conta.pessoas.length > 0 ? `
                             <button class="btn-pequeno btn-pagar" onclick="togglePagoConta(${conta.id})">
                                 ${conta.pago ? '↩️ Desfazer' : '✅ Marcar Pago'}
                             </button>
                             <button class="btn-pequeno" onclick="mostrarPendenciasConta('${conta.nome.replace(/'/g, "\\'")}')" style="background: ${verificarPendenciasConta(conta.nome).length > 0 ? '#dc3545' : '#6c757d'}; color: white;">
                                 📋 Pendências ${verificarPendenciasConta(conta.nome).length > 0 ? `(${verificarPendenciasConta(conta.nome).length})` : ''}
                             </button>
+                            ` : ''}
                             <button class="btn-pequeno btn-editar" onclick='abrirModal(${JSON.stringify(conta).replace(/'/g, "&apos;")})'>✏️ Editar</button>
                             <button class="btn-pequeno btn-excluir" onclick="excluirConta(${conta.id})">🗑️ Excluir</button>
+                        </div>
+                    </div>
                         </div>
                     </div>
                 `;
@@ -6708,6 +6787,64 @@ function mostrarDetalhesValor(contaId) {
                 .reduce((sum, c) => sum + calcularTotal(c), 0);
             
             document.getElementById('totalValor').textContent = `R$ ${totalPagamentos.toFixed(2)}`;
+        }
+        
+        function moverContaCima(contaId) {
+            const index = contas.findIndex(c => c.id === contaId);
+            
+            if (index <= 0) {
+                return; // Já está no topo
+            }
+            
+            const nomeConta1 = contas[index].nome;
+            const nomeConta2 = contas[index - 1].nome;
+            
+            // Trocar no mês atual
+            [contas[index - 1], contas[index]] = [contas[index], contas[index - 1]];
+            
+            // Aplicar mesma ordem em TODOS os meses
+            Object.keys(todasContas).forEach(chaveMes => {
+                const contasMes = todasContas[chaveMes];
+                const idx1 = contasMes.findIndex(c => c.nome === nomeConta1);
+                const idx2 = contasMes.findIndex(c => c.nome === nomeConta2);
+                
+                if (idx1 !== -1 && idx2 !== -1) {
+                    [contasMes[idx2], contasMes[idx1]] = [contasMes[idx1], contasMes[idx2]];
+                }
+            });
+            
+            adicionarLog(`⬆️ Conta movida para cima em TODOS os meses`, 'success');
+            salvarNoStorage();
+            renderizarContas();
+        }
+        
+        function moverContaBaixo(contaId) {
+            const index = contas.findIndex(c => c.id === contaId);
+            
+            if (index < 0 || index >= contas.length - 1) {
+                return; // Já está no final
+            }
+            
+            const nomeConta1 = contas[index].nome;
+            const nomeConta2 = contas[index + 1].nome;
+            
+            // Trocar no mês atual
+            [contas[index], contas[index + 1]] = [contas[index + 1], contas[index]];
+            
+            // Aplicar mesma ordem em TODOS os meses
+            Object.keys(todasContas).forEach(chaveMes => {
+                const contasMes = todasContas[chaveMes];
+                const idx1 = contasMes.findIndex(c => c.nome === nomeConta1);
+                const idx2 = contasMes.findIndex(c => c.nome === nomeConta2);
+                
+                if (idx1 !== -1 && idx2 !== -1) {
+                    [contasMes[idx1], contasMes[idx2]] = [contasMes[idx2], contasMes[idx1]];
+                }
+            });
+            
+            adicionarLog(`⬇️ Conta movida para baixo em TODOS os meses`, 'success');
+            salvarNoStorage();
+            renderizarContas();
         }
 
         inicializar();
