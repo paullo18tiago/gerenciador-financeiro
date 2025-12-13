@@ -6649,7 +6649,7 @@ function mostrarDetalhesValor(contaId) {
                         <div class="conta-header">
                             <div>
                                 <span class="conta-nome">${conta.tipoTransacao === 'recebimento' ? '💰' : '➡️'} ${conta.nome}</span>
-                                ${conta.pago ? '<span class="status-badge badge-pago">✅ PAGO</span>' : '<span class="status-badge badge-pendente">⏳ Pendente</span>'}
+                                ${conta.pessoas && conta.pessoas.length > 0 ? (conta.pago ? '<span class="status-badge badge-pago">✅ PAGO</span>' : '<span class="status-badge badge-pendente">⏳ Pendente</span>') : ''}
                             </div>
                             <span class="conta-valor" style="cursor: pointer; white-space: nowrap;" onclick="mostrarDetalhesValor(${conta.id})" title="Clique para ver detalhes">R$ ${total.toFixed(2)}</span>
                         </div>
