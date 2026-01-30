@@ -1996,6 +1996,7 @@
         let todasContas = {}; // Armazena contas de todos os meses
         let historicoLimitePago = {}; // Armazena valores já pagos por cartão
         let dataUltimaAtualizacao = null;
+        let contasExcluidas = {}; // Armazena contas excluídas por mês: { "2025-01": ["Conta A", "Conta B"] }
         
         function toggleParcelasEmAndamento() {
             const checkbox = document.getElementById('compraEmAndamento');
@@ -3299,6 +3300,17 @@ function voltarMes() {
             verificarEMigrarVersao();
             
             carregarTodasContas();
+            
+            // Carregar contas excluídas
+            const contasExcluidasSalvas = localStorage.getItem('contasExcluidas');
+            if (contasExcluidasSalvas) {
+                try {
+                    contasExcluidas = JSON.parse(contasExcluidasSalvas);
+                } catch (e) {
+                    contasExcluidas = {};
+                }
+            }
+            
             const dataArmazenada = localStorage.getItem('dataUltimaAtualizacao');
             if (dataArmazenada) {
                 dataUltimaAtualizacao = dataArmazenada;
@@ -3413,6 +3425,38 @@ function voltarMes() {
             
             return totalPago;
         }
+        // Função auxiliar para verificar se uma conta foi excluída (verifica todos os meses até o mês informado)
+        function contaFoiExcluida(nomeConta, chaveMesAtual) {
+            const [anoAtual, mesAtual] = chaveMesAtual.split('-').map(Number);
+            const dataAtualMes = new Date(anoAtual, mesAtual - 1);
+            
+            console.log(`🔍 Verificando se "${nomeConta}" foi excluída para o mês ${chaveMesAtual}`);
+            console.log('📋 contasExcluidas completo:', JSON.stringify(contasExcluidas, null, 2));
+            
+            // *** NOVO: Verificar se a conta foi excluída em QUALQUER mês anterior ou igual ao mês atual ***
+            // Isso garante que meses futuros criados depois da exclusão também bloqueiem a conta
+            for (const chaveMes in contasExcluidas) {
+                const [ano, mes] = chaveMes.split('-').map(Number);
+                const dataMes = new Date(ano, mes - 1);
+                
+                console.log(`   Verificando mês ${chaveMes}: dataMes=${dataMes.toISOString()}, dataAtualMes=${dataAtualMes.toISOString()}`);
+                
+                // Se o mês da exclusão é anterior ou igual ao mês atual
+                if (dataMes <= dataAtualMes) {
+                    console.log(`   ✓ Mês ${chaveMes} é anterior/igual - verificando lista:`, contasExcluidas[chaveMes]);
+                    if (contasExcluidas[chaveMes].includes(nomeConta)) {
+                        console.log(`   ✅ ENCONTRADO! Conta "${nomeConta}" foi excluída em ${chaveMes}`);
+                        return true;
+                    }
+                } else {
+                    console.log(`   ✗ Mês ${chaveMes} é futuro - ignorando`);
+                }
+            }
+            
+            console.log(`   ❌ Conta "${nomeConta}" NÃO foi excluída`);
+            return false;
+        }
+        
         function carregarContasMesAtual() {
             const chave = getChaveMes();
             adicionarLog(`📂 carregarContasMesAtual() - Mês: ${chave}`, 'info');
@@ -3427,6 +3471,17 @@ function voltarMes() {
                 } catch (e) {
                     console.error('Erro ao carregar dados:', e);
                     todasContas = {};
+                }
+            }
+            
+            // *** CRÍTICO: Recarregar também as contas excluídas ***
+            const contasExcluidasSalvas = localStorage.getItem('contasExcluidas');
+            if (contasExcluidasSalvas) {
+                try {
+                    contasExcluidas = JSON.parse(contasExcluidasSalvas);
+                } catch (e) {
+                    console.error('Erro ao carregar contas excluídas:', e);
+                    contasExcluidas = {};
                 }
             }
             
@@ -3454,6 +3509,12 @@ function voltarMes() {
                         const contasMesAnterior = todasContas[chaveMesAnterior];
                         
                         contasMesAnterior.forEach(contaAnterior => {
+                            // *** MODIFICADO: Usar função que verifica em todos os meses ***
+                            if (contaFoiExcluida(contaAnterior.nome, chave)) {
+                                adicionarLog(`   🚫 Conta "${contaAnterior.nome}" não foi copiada (excluída manualmente)`, 'info');
+                                return; // Pular esta conta
+                            }
+                            
                             // Se é conta de PAGAMENTO E não existe no mês atual
                             if (contaAnterior.tipoTransacao !== 'recebimento' && 
                                 contaAnterior.tipoTransacao !== 'pagamento-custom' &&
@@ -3566,6 +3627,12 @@ function voltarMes() {
                 // *** CRÍTICO: PRIMEIRO copiar TODAS as contas do mês ANTERIOR (não futuro) ***
                 if (chaveMesReferencia && todasContas[chaveMesReferencia]) {
                     todasContas[chaveMesReferencia].forEach(contaAnterior => {
+                        // *** MODIFICADO: Usar função que verifica em todos os meses ***
+                        if (contaFoiExcluida(contaAnterior.nome, chave)) {
+                            adicionarLog(`   🚫 Conta "${contaAnterior.nome}" não foi copiada (excluída manualmente)`, 'info');
+                            return; // Pular esta conta
+                        }
+                        
                         // *** CORREÇÃO: Copiar TODAS as contas de PAGAMENTO (mesmo vazias) ***
                         if (contaAnterior.tipoTransacao !== 'recebimento' && 
                             contaAnterior.tipoTransacao !== 'pagamento-custom') {
@@ -6593,6 +6660,7 @@ function verificarEMigrarVersao() {
             
             const dadosBackup = {
                 todasContas: todasContas,
+                contasExcluidas: contasExcluidas || {}, // *** NOVO: Incluir contas excluídas no backup ***
                 mesAtualSalvo: {
                     ano: mesAtual.getFullYear(),
                     mes: mesAtual.getMonth()
@@ -6652,6 +6720,16 @@ function verificarEMigrarVersao() {
                     // Carregar o backup
                     todasContas = dadosBackup.todasContas;
                     localStorage.setItem('todasContas', JSON.stringify(todasContas));
+                    
+                    // *** NOVO: Restaurar ou limpar contasExcluidas ***
+                    if (dadosBackup.contasExcluidas) {
+                        // Se o backup tem contasExcluidas, restaurar
+                        contasExcluidas = dadosBackup.contasExcluidas;
+                    } else {
+                        // Se o backup é antigo (sem contasExcluidas), limpar
+                        contasExcluidas = {};
+                    }
+                    localStorage.setItem('contasExcluidas', JSON.stringify(contasExcluidas));
                     
                     // Carregar o mês salvo no backup
                     if (dadosBackup.mesAtualSalvo) {
@@ -8818,19 +8896,50 @@ function adicionarNovaCompra(contaId) {
             const contaVazia = !conta.pessoas || conta.pessoas.length === 0;
             
             if (contaVazia) {
-                // Conta vazia - excluir APENAS do mês atual, preservando histórico
-                const confirmacao = confirm(`⚠️ ATENÇÃO!\n\nDeseja excluir a conta "${conta.nome}" APENAS do mês atual?\n\nO histórico de meses anteriores será PRESERVADO.`);
+                // Conta vazia - excluir do mês atual e meses futuros, preservando histórico
+                const confirmacao = confirm(`⚠️ ATENÇÃO!\n\nDeseja excluir a conta "${conta.nome}" do mês atual e meses futuros?\n\nO histórico de meses anteriores será PRESERVADO.`);
                 if (!confirmacao) return;
                 
-                // Remover APENAS do mês atual
+                console.log(`🗑️ EXCLUSÃO INICIADA - Conta: "${conta.nome}", Mês: ${chaveAtual}`);
+                
+                // Remover do mês atual
                 contas = contas.filter(c => c.id !== id);
                 
-                // Atualizar apenas o mês atual no todasContas
-                if (todasContas[chaveAtual]) {
-                    todasContas[chaveAtual] = todasContas[chaveAtual].filter(c => c.nome !== conta.nome);
-                }
+                // Obter a data do mês atual para comparação
+                const [anoAtual, mesAtual] = chaveAtual.split('-').map(Number);
+                const dataAtual = new Date(anoAtual, mesAtual - 1);
                 
-                adicionarLog(`🗑️ Conta "${conta.nome}" excluída apenas do mês atual. Histórico preservado.`, 'success');
+                // Remover do mês atual e de todos os meses futuros que já existem
+                Object.keys(todasContas).forEach(chaveMes => {
+                    const [ano, mes] = chaveMes.split('-').map(Number);
+                    const dataMes = new Date(ano, mes - 1);
+                    
+                    // Se for o mês atual ou futuro, excluir a conta
+                    if (dataMes >= dataAtual) {
+                        const antes = todasContas[chaveMes].length;
+                        todasContas[chaveMes] = todasContas[chaveMes].filter(c => c.nome !== conta.nome);
+                        const depois = todasContas[chaveMes].length;
+                        console.log(`   Mês ${chaveMes}: removido ${antes - depois} conta(s)`);
+                        
+                        // *** NOVO: Registrar exclusão também em cada mês futuro que já existe ***
+                        if (!contasExcluidas[chaveMes]) {
+                            contasExcluidas[chaveMes] = [];
+                        }
+                        if (!contasExcluidas[chaveMes].includes(conta.nome)) {
+                            contasExcluidas[chaveMes].push(conta.nome);
+                        }
+                    }
+                });
+                
+                console.log(`📝 Exclusão registrada para o mês atual e todos os meses futuros existentes`);
+                console.log(`💾 contasExcluidas completo ANTES de salvar:`, JSON.stringify(contasExcluidas, null, 2));
+                
+                // Salvar lista de contas excluídas
+                localStorage.setItem('contasExcluidas', JSON.stringify(contasExcluidas));
+                
+                console.log(`✅ Salvo no localStorage`);
+                
+                adicionarLog(`🗑️ Conta "${conta.nome}" excluída do mês atual e meses futuros. Histórico preservado.`, 'success');
             } else {
                 // Conta com dados - excluir de TODOS os meses
                 const confirmacao = confirm(`⚠️ ATENÇÃO!\n\nDeseja realmente excluir a conta "${conta.nome}" de TODOS OS MESES?\n\nEsta ação excluirá TODO O HISTÓRICO e não pode ser desfeita!`);
@@ -8845,6 +8954,17 @@ function adicionarNovaCompra(contaId) {
                 
                 // Remover do mês atual também
                 contas = contas.filter(c => c.id !== id);
+                
+                // *** NOVO: Remover da lista de exclusões se existir (conta foi totalmente removida) ***
+                Object.keys(contasExcluidas).forEach(chaveMes => {
+                    contasExcluidas[chaveMes] = contasExcluidas[chaveMes].filter(n => n !== nomeConta);
+                    // Limpar arrays vazios
+                    if (contasExcluidas[chaveMes].length === 0) {
+                        delete contasExcluidas[chaveMes];
+                    }
+                });
+                
+                localStorage.setItem('contasExcluidas', JSON.stringify(contasExcluidas));
                 
                 adicionarLog(`🗑️ Conta "${conta.nome}" excluída de TODOS os meses.`, 'warning');
             }
@@ -10899,6 +11019,12 @@ function mostrarDetalhesValor(contaId) {
             
             // *** NOVO: Filtrar contas de recebimento sem pessoas e totalmente quitadas ***
             const contasVisiveis = contas.filter(conta => {
+                // *** CRÍTICO: Verificar se a conta foi excluída manualmente ***
+                const chaveAtual = getChaveMes();
+                if (contaFoiExcluida(conta.nome, chaveAtual)) {
+                    return false; // Não mostrar contas excluídas manualmente
+                }
+                
                 // Se tem pessoas, sempre mostrar
                 if (conta.pessoas && conta.pessoas.length > 0) return true;
                 
