@@ -3443,27 +3443,34 @@ function voltarMes() {
                 const chavesOrdenadas = Object.keys(todasContas).sort();
                 const indexAtual = chavesOrdenadas.indexOf(chave);
                 
+                // *** CORREÇÃO: Só copiar se há um mês anterior CRONOLOGICAMENTE ***
                 if (indexAtual > 0) {
                     const chaveMesAnterior = chavesOrdenadas[indexAtual - 1];
-                    const contasMesAnterior = todasContas[chaveMesAnterior];
+                    const [anoAnt, mesAnt] = chaveMesAnterior.split('-').map(Number);
+                    const dataMesAnterior = new Date(anoAnt, mesAnt - 1);
                     
-                    contasMesAnterior.forEach(contaAnterior => {
-                        // Se é conta de PAGAMENTO E não existe no mês atual
-                        if (contaAnterior.tipoTransacao !== 'recebimento' && 
-                            contaAnterior.tipoTransacao !== 'pagamento-custom' &&
-                            !contasNoMesSalvo.has(contaAnterior.nome)) {
-                            
-                            // Adicionar conta vazia aos dados salvos
-                            dadosSalvos.push({
-                                ...contaAnterior,
-                                id: Date.now() + Math.random(),
-                                pessoas: [],
-                                pago: false
-                            });
-                            
-                            adicionarLog(`   ✨ Conta de PAGAMENTO "${contaAnterior.nome}" adicionada ao mês existente`, 'success');
-                        }
-                    });
+                    // *** CRÍTICO: Verificar se o mês anterior é realmente ANTERIOR ao atual ***
+                    if (dataMesAnterior < dataAtualMes) {
+                        const contasMesAnterior = todasContas[chaveMesAnterior];
+                        
+                        contasMesAnterior.forEach(contaAnterior => {
+                            // Se é conta de PAGAMENTO E não existe no mês atual
+                            if (contaAnterior.tipoTransacao !== 'recebimento' && 
+                                contaAnterior.tipoTransacao !== 'pagamento-custom' &&
+                                !contasNoMesSalvo.has(contaAnterior.nome)) {
+                                
+                                // Adicionar conta vazia aos dados salvos
+                                dadosSalvos.push({
+                                    ...contaAnterior,
+                                    id: Date.now() + Math.random(),
+                                    pessoas: [],
+                                    pago: false
+                                });
+                                
+                                adicionarLog(`   ✨ Conta de PAGAMENTO "${contaAnterior.nome}" adicionada do mês anterior (${chaveMesAnterior})`, 'success');
+                            }
+                        });
+                    }
                 }
                 
                 // Reprocessar cada conta COM CONSOLIDAÇÃO
@@ -3536,21 +3543,29 @@ function voltarMes() {
                 contas = [];
                 const contasMap = new Map();
                 
-                // PRIMEIRO: Determinar ordem das contas do mês mais recente
+                // PRIMEIRO: Determinar ordem das contas do mês mais recente ANTERIOR ao atual
                 let ordemContas = [];
-                const chavesOrdenadas = Object.keys(todasContas).sort().reverse();
+                const chavesOrdenadas = Object.keys(todasContas).sort();
                 
-                for (let chaveMesRef of chavesOrdenadas) {
-                    if (todasContas[chaveMesRef] && todasContas[chaveMesRef].length > 0) {
-                        ordemContas = todasContas[chaveMesRef].map(c => c.nome);
+                // *** CORREÇÃO: Encontrar o último mês ANTERIOR ao mês atual ***
+                let chaveMesReferencia = null;
+                for (let i = chavesOrdenadas.length - 1; i >= 0; i--) {
+                    const chaveMesRef = chavesOrdenadas[i];
+                    const [anoRef, mesRef] = chaveMesRef.split('-').map(Number);
+                    const dataMesRef = new Date(anoRef, mesRef - 1);
+                    
+                    if (dataMesRef < dataAtualMes) {
+                        chaveMesReferencia = chaveMesRef;
+                        if (todasContas[chaveMesRef] && todasContas[chaveMesRef].length > 0) {
+                            ordemContas = todasContas[chaveMesRef].map(c => c.nome);
+                        }
                         break;
                     }
                 }
                 
-                // *** CRÍTICO: PRIMEIRO copiar TODAS as contas do mês anterior (incluindo vazias) ***
-                const chaveMesAnterior = chavesOrdenadas.length > 0 ? chavesOrdenadas[0] : null;
-                if (chaveMesAnterior && todasContas[chaveMesAnterior]) {
-                    todasContas[chaveMesAnterior].forEach(contaAnterior => {
+                // *** CRÍTICO: PRIMEIRO copiar TODAS as contas do mês ANTERIOR (não futuro) ***
+                if (chaveMesReferencia && todasContas[chaveMesReferencia]) {
+                    todasContas[chaveMesReferencia].forEach(contaAnterior => {
                         // *** CORREÇÃO: Copiar TODAS as contas de PAGAMENTO (mesmo vazias) ***
                         if (contaAnterior.tipoTransacao !== 'recebimento' && 
                             contaAnterior.tipoTransacao !== 'pagamento-custom') {
@@ -3562,7 +3577,7 @@ function voltarMes() {
                                 pago: false
                             });
                             
-                            adicionarLog(`   📋 Conta de PAGAMENTO "${contaAnterior.nome}" copiada para o novo mês`, 'info');
+                            adicionarLog(`   📋 Conta de PAGAMENTO "${contaAnterior.nome}" copiada do mês anterior (${chaveMesReferencia})`, 'info');
                         }
                     });
                 }
