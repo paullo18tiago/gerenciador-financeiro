@@ -8797,18 +8797,42 @@ function adicionarNovaCompra(contaId) {
 
         function excluirConta(id) {
             const conta = contas.find(c => c.id === id);
-            const confirmacao = confirm(`⚠️ ATENÇÃO!\n\nDeseja realmente excluir a conta "${conta.nome}" de TODOS OS MESES?\n\nEsta ação não pode ser desfeita!`);
-            if (!confirmacao) return;
+            const chaveAtual = getChaveMes();
             
-            const nomeConta = conta.nome;
+            // Verificar se a conta está vazia (sem compras ou recebimentos)
+            const contaVazia = !conta.pessoas || conta.pessoas.length === 0;
             
-            // Excluir de todos os meses
-            Object.keys(todasContas).forEach(chaveMes => {
-                todasContas[chaveMes] = todasContas[chaveMes].filter(c => c.nome !== nomeConta);
-            });
-            
-            // Remover do mês atual também
-            contas = contas.filter(c => c.id !== id);
+            if (contaVazia) {
+                // Conta vazia - excluir APENAS do mês atual, preservando histórico
+                const confirmacao = confirm(`⚠️ ATENÇÃO!\n\nDeseja excluir a conta "${conta.nome}" APENAS do mês atual?\n\nO histórico de meses anteriores será PRESERVADO.`);
+                if (!confirmacao) return;
+                
+                // Remover APENAS do mês atual
+                contas = contas.filter(c => c.id !== id);
+                
+                // Atualizar apenas o mês atual no todasContas
+                if (todasContas[chaveAtual]) {
+                    todasContas[chaveAtual] = todasContas[chaveAtual].filter(c => c.nome !== conta.nome);
+                }
+                
+                adicionarLog(`🗑️ Conta "${conta.nome}" excluída apenas do mês atual. Histórico preservado.`, 'success');
+            } else {
+                // Conta com dados - excluir de TODOS os meses
+                const confirmacao = confirm(`⚠️ ATENÇÃO!\n\nDeseja realmente excluir a conta "${conta.nome}" de TODOS OS MESES?\n\nEsta ação excluirá TODO O HISTÓRICO e não pode ser desfeita!`);
+                if (!confirmacao) return;
+                
+                const nomeConta = conta.nome;
+                
+                // Excluir de todos os meses
+                Object.keys(todasContas).forEach(chaveMes => {
+                    todasContas[chaveMes] = todasContas[chaveMes].filter(c => c.nome !== nomeConta);
+                });
+                
+                // Remover do mês atual também
+                contas = contas.filter(c => c.id !== id);
+                
+                adicionarLog(`🗑️ Conta "${conta.nome}" excluída de TODOS os meses.`, 'warning');
+            }
             
             // Salvar alterações
             localStorage.setItem('todasContas', JSON.stringify(todasContas));
