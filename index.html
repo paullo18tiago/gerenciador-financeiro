@@ -11864,7 +11864,7 @@ function mostrarDetalhesValor(contaId) {
                             <div class="info-conta">
                                 ${conta.diaFechamento ? `◉ Fecha: ${conta.diaFechamento}` : ''} 
                                 ${conta.diaVencimento ? `/ ◉ Venc: ${conta.diaVencimento}` : ''}
-                                ${conta.limiteTotal ? `<br>◉ <span class="limite">(Limite disponível: ${limiteDisp.toLocaleString('pt-BR', {minimumFractionDigits: 2})})</span>` : ''}
+                                ${conta.limiteTotal ? `<br>◉ <span class="limite">(Limite disponível: ${limiteDisp.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})})</span>` : ''}
                             </div>
                         ` : ''}
                         
