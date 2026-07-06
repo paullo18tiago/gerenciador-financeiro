@@ -13,6 +13,15 @@
     <link rel="apple-touch-icon" href="icon-192.png">
     <title>Gerenciador Financeiro</title>
     <style>
+        /* ===================================================================
+           VARIÁVEL ÚNICA: espessura da barra lateral esquerda dos conteineres
+           de PAGAMENTO e RECEBIMENTO. Altere apenas o valor abaixo e as duas
+           barras (linhas mais abaixo, .conta e .conta.recebimento) mudam juntas.
+           =================================================================== */
+        :root {
+            --espessura-barra-lateral: 5px;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -82,7 +91,7 @@
             margin-bottom: 12px;
             position: relative;
             border: 1px solid #c0c0c0;  /* ← AJUSTAR o contraste da borda dos Conteiners*/
-            border-left: 4px solid #667eea;
+            border-left: var(--espessura-barra-lateral) solid #667eea;
             box-shadow: 0 2px 6px rgba(0,0,0,0.12);
         }
 
@@ -91,10 +100,12 @@
            Estilo aplicado quando uma conta de PAGAMENTO é marcada como paga.
            =================================================================== */
         .conta.pago {
-            opacity: 0.7;              /* ← Intensidade/transparência do conteiner quando pago */
-            background: #D7DDFF;       /* ← Cor de fundo do conteiner quando pago */
-            border-color: #c3e6cb;     /* ← Cor da borda geral (topo/direita/baixo) quando pago */
-            border-left: 4px solid #28a745;  /* ← Cor da faixa lateral esquerda quando pago */
+            /* opacity removida: antes deixava TUDO (inclusive a barra lateral) mais apagado.
+               Agora a barra lateral e o restante do conteúdo mantêm cor e nitidez naturais;
+               o efeito de "pago" fica só por conta do fundo e da borda abaixo. */
+            background: #D4FBD3;       /* ← Cor de fundo do conteiner quando pago */
+            border-color: #c3e6cb;     /* ← Cor da borda geral (topo/direita/baixo) quando pago. ATENÇÃO: essa propriedade sozinha também mudaria a barra lateral esquerda, por isso a linha abaixo restaura a cor dela */
+            border-left-color: #667eea;  /* ← Restaura a cor NATURAL/vívida da barra lateral esquerda (mesma cor de .conta), impedindo que "border-color" acima a deixe pálida */
         }
 
         /* ===================================================================
@@ -105,7 +116,7 @@
         .conta.recebimento {
             background: #ffffff;       /* ← Cor de fundo enquanto pendente */
             border-color: #c3e6cb;     /* ← Cor da borda geral (topo/direita/baixo) enquanto pendente */
-            border-left: 4px solid #ffc107;  /* ← Cor da faixa lateral esquerda enquanto PENDENTE (amarelo ouro, igual ao btn-editar/badge-pendente) */
+            border-left: var(--espessura-barra-lateral) solid #ffc107;  /* ← Cor da faixa lateral esquerda enquanto PENDENTE (amarelo ouro, igual ao btn-editar/badge-pendente) */
         }
 
         /* ===================================================================
@@ -113,10 +124,12 @@
            Sobrescreve o estilo acima quando o recebimento é marcado como pago.
            =================================================================== */
         .conta.recebimento.pago {
-            opacity: 0.8;               /* ← Intensidade/transparência do conteiner quando pago */
-            background: #FFFEBE;       /* ← Cor de fundo quando pago: amarelo bem clarinho/opaco (não atrapalha leitura) */
-            border-color: #ffe9a8;     /* ← Cor da borda geral (topo/direita/baixo) quando pago: tom amarelo suave combinando com o fundo */
-            border-left: 4px solid #28a745;  /* ← Cor da faixa lateral esquerda quando pago: volta a ser VERDE */
+            /* opacity removida: antes deixava TUDO (inclusive a barra lateral) mais apagado.
+               Agora a barra lateral e o restante do conteúdo mantêm cor e nitidez naturais;
+               o efeito de "pago" fica só por conta do fundo e da borda abaixo. */
+            background: #D4FBD3;       /* ← Cor de fundo quando pago: amarelo bem clarinho/opaco (não atrapalha leitura) */
+            border-color: #ffe9a8;     /* ← Cor da borda geral (topo/direita/baixo) quando pago. ATENÇÃO: essa propriedade sozinha também mudaria a barra lateral esquerda, por isso a linha abaixo restaura a cor dela */
+            border-left-color: #ffc107;  /* ← Restaura a cor NATURAL/vívida da barra lateral esquerda (mesma cor amarela de .conta.recebimento), impedindo que "border-color" acima a deixe pálida */
         }
 
         .conta-header {
