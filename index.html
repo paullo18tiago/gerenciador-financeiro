@@ -7243,7 +7243,7 @@ function verificarEMigrarVersao() {
                 versao: '1.0'
             };
             
-            const blob = new Blob([JSON.stringify(dadosBackup, null, 2)], { type: 'application/json' });
+            const blob = new Blob([JSON.stringify(dadosBackup)], { type: 'application/json' }); // *** OTIMIZAÇÃO: JSON sem indentação, gerado mais rápido, download mais instantâneo ***
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
@@ -7251,7 +7251,11 @@ function verificarEMigrarVersao() {
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-            URL.revokeObjectURL(url);
+            
+            // *** OTIMIZAÇÃO: revogar a URL do blob logo em seguida, sem travar o início do download ***
+            setTimeout(() => {
+                URL.revokeObjectURL(url);
+            }, 1000);
             
             toggleMenuBackup();
             alert('✅ Backup salvo com sucesso!\n\n📁 Arquivo: ' + nomeArquivo);
