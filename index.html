@@ -1982,6 +1982,10 @@
                 <strong>⚠️ ESCOLHA O TIPO DE LIMPEZA:</strong>
             </div>
             <div style="margin-bottom: 16px;">
+                <button id="btnToggleDebugPersistente" class="btn-limpar-confirmar" onclick="toggleModoDebugPersistente()" style="width: 100%; margin-bottom: 16px; background: #6c757d; color: white;">
+                    🐛 Modo Debug: ...
+                </button>
+                
                 <button class="btn-limpar-confirmar" onclick="limparApenasCache()" style="width: 100%; margin-bottom: 10px; background: #ffc107; color: #333;">
                     🧹 Limpar Apenas Cache/Configurações
                 </button>
@@ -2031,8 +2035,19 @@
         let contas = [];
         let contaEditando = null;
         let pessoasTemp = [];
-        const VERSAO_ATUAL = '2.0'; // Aumente este número quando fizer alterações importantes
-        const MOSTRAR_DEBUG = false; // ← MUDE PARA true PARA ATIVAR O BOTÃO 🐛 DEBUG, false PARA DESATIVAR
+        const MOSTRAR_DEBUG = true; // ← MUDE PARA true PARA ATIVAR O BOTÃO 🐛 DEBUG, false PARA DESATIVAR
+        
+        // ============================================
+        // NOVO: Permite ativar/desativar o modo debug em tempo real (via botão
+        // na janela "Limpar Dados"), sem precisar editar MOSTRAR_DEBUG no HTML.
+        // Se houver uma preferência salva no localStorage, ela tem prioridade
+        // sobre a constante MOSTRAR_DEBUG acima.
+        // ============================================
+        function debugEstaAtivo() {
+            const override = localStorage.getItem('debugAtivoOverride');
+            if (override !== null) return override === 'true';
+            return MOSTRAR_DEBUG;
+        }
         let longPressTimer = null;
         let debugLogs = [];
         let debugAtivo = false;
@@ -2888,10 +2903,13 @@ function voltarMes() {
                 if (!contaFutura) {
                     const contaOriginal = contas.find(c => c.nome === nomeConta);
                     if (contaOriginal) {
+                        // NOVO: reconstrói as demais compras em andamento desta conta com
+                        // base no histórico, para não perder dados ao criar este mês do zero
+                        const pessoasHistoricasAbat = reconstruirComprasHistoricasParaNovoMes(nomeConta, chaveFutura, new Set([compra.idUnico]));
                         contaFutura = {
                             ...contaOriginal,
                             id: Date.now() + Math.random(),
-                            pessoas: [],
+                            pessoas: pessoasHistoricasAbat,
                             pago: false
                         };
                         contasMes.push(contaFutura);
@@ -3182,10 +3200,13 @@ function voltarMes() {
                 if (!contaFutura) {
                     const contaOriginal = contas.find(c => c.nome === nomeConta);
                     if (contaOriginal) {
+                        // NOVO: reconstrói as demais compras em andamento desta conta com
+                        // base no histórico, para não perder dados ao criar este mês do zero
+                        const pessoasHistoricasAbat = reconstruirComprasHistoricasParaNovoMes(nomeConta, chaveFutura, new Set([compra.idUnico]));
                         contaFutura = {
                             ...contaOriginal,
                             id: Date.now() + Math.random(),
-                            pessoas: [],
+                            pessoas: pessoasHistoricasAbat,
                             pago: false
                         };
                         contasMes.push(contaFutura);
@@ -3366,10 +3387,13 @@ function voltarMes() {
                 if (!contaFutura) {
                     const contaOriginal = contas.find(c => c.nome === nomeConta);
                     if (contaOriginal) {
+                        // NOVO: reconstrói as demais compras em andamento desta conta com
+                        // base no histórico, para não perder dados ao criar este mês do zero
+                        const pessoasHistoricasAbat = reconstruirComprasHistoricasParaNovoMes(nomeConta, chaveFutura, new Set([compra.idUnico]));
                         contaFutura = {
                             ...contaOriginal,
                             id: Date.now() + Math.random(),
-                            pessoas: [],
+                            pessoas: pessoasHistoricasAbat,
                             pago: false
                         };
                         contasMes.push(contaFutura);
@@ -3417,9 +3441,6 @@ function voltarMes() {
         }
 
         function inicializar() {
-            // Verificar versão e fazer migração se necessário
-            verificarEMigrarVersao();
-            
             carregarTodasContas();
             
             // Carregar contas excluídas
@@ -3449,10 +3470,10 @@ function voltarMes() {
                 }
             }
             
-            // Mostrar/ocultar botão DEBUG baseado na configuração
+            // Mostrar/ocultar botão DEBUG baseado na configuração (respeitando o override salvo)
             const btnDebug = document.getElementById('btnDebug');
             if (btnDebug) {
-                btnDebug.style.display = MOSTRAR_DEBUG ? 'block' : 'none';
+                btnDebug.style.display = debugEstaAtivo() ? 'block' : 'none';
             }
             
             atualizarVisualizacao();
@@ -3469,6 +3490,228 @@ function voltarMes() {
 
         function getChaveMes() {
             return `${mesAtual.getFullYear()}-${String(mesAtual.getMonth() + 1).padStart(2, '0')}`;
+        }
+
+        // ============================================
+        // NOVO: Calcula automaticamente em qual mês (AAAA-MM) a fatura de uma
+        // compra de cartão deve cair, com base na data REAL de hoje (data do
+        // dispositivo) e no dia de fechamento do cartão. Se hoje já passou do
+        // dia de fechamento, a compra pertence à fatura do mês SEGUINTE.
+        // Isso evita que o usuário precise se preocupar em estar "no mês certo"
+        // ao lançar uma compra de cartão.
+        // ============================================
+        function calcularChaveFaturaCartao(diaFechamento) {
+            // Se não há dia de fechamento definido, mantém o comportamento padrão (mês em exibição)
+            if (!diaFechamento) {
+                return getChaveMes();
+            }
+
+            const hoje = new Date();
+            let anoFatura = hoje.getFullYear();
+            let mesFatura = hoje.getMonth(); // 0-indexado
+
+            if (hoje.getDate() > diaFechamento) {
+                // A fatura deste mês já fechou: a compra entra na fatura do mês seguinte
+                mesFatura += 1;
+                if (mesFatura > 11) {
+                    mesFatura = 0;
+                    anoFatura += 1;
+                }
+            }
+
+            return `${anoFatura}-${String(mesFatura + 1).padStart(2, '0')}`;
+        }
+
+        // ============================================
+        // NOVO: Decide se uma compra recém-criada deve ser redirecionada para
+        // o mês de fatura correto do cartão. Retorna null (não redireciona) para:
+        // contas que não são cartão, cartões sem dia de fechamento definido,
+        // recebimentos/pagamentos customizados, e compras marcadas como
+        // "em andamento" (parcelas já pagas) — estas mantêm o mês em exibição,
+        // pois já possuem lógica própria de meses retroativos.
+        // ============================================
+        function calcularRedirecionamentoCartao(tipoConta, diaFechamento, tipoTransacao, temParcelasJaPagas) {
+            if (temParcelasJaPagas) return null;
+            if (tipoTransacao === 'recebimento' || tipoTransacao === 'pagamento-custom') return null;
+            if (tipoConta !== 'cartao' || !diaFechamento) return null;
+
+            const chaveAtualLocal = getChaveMes();
+            const chaveFatura = calcularChaveFaturaCartao(diaFechamento);
+
+            if (chaveFatura === chaveAtualLocal) return null;
+
+            return { chaveOrigem: chaveAtualLocal, chaveDestino: chaveFatura };
+        }
+
+        // ============================================
+        // NOVO: Move uma compra recém-adicionada (e as projeções dela já
+        // existentes em meses futuros) do mês em que foi fisicamente lançada
+        // (mês em exibição) para o mês de fatura correto do cartão, mantendo
+        // o número da parcela e deslocando os meses seguintes na mesma proporção.
+        // ============================================
+        // ============================================
+        // NOVO: Quando o redirecionamento de fatura precisa criar um mês que
+        // ainda não existia no armazenamento, essa função reconstrói as DEMAIS
+        // compras em andamento daquela conta (com base no histórico de meses
+        // anteriores e no _mesBase/_parcelaBase de cada uma), evitando que o
+        // mês recém-criado "esqueça" compras que não fazem parte deste
+        // redirecionamento específico. Sem isso, o mês ficaria permanentemente
+        // incompleto, já que meses já existentes no armazenamento nunca são
+        // recalculados novamente.
+        // ============================================
+        function reconstruirComprasHistoricasParaNovoMes(nomeConta, chaveMesAlvo, idsUnicosExcluir) {
+            const idsExcluir = idsUnicosExcluir instanceof Set ? idsUnicosExcluir : new Set([idsUnicosExcluir]);
+            const [anoAlvo, mesAlvo] = chaveMesAlvo.split('-').map(Number);
+            const dataAlvo = new Date(anoAlvo, mesAlvo - 1);
+            const idsProcessados = new Set();
+            const pessoasResultado = [];
+
+            Object.keys(todasContas).sort().forEach(chaveMes => {
+                const [ano, mes] = chaveMes.split('-').map(Number);
+                const dataMes = new Date(ano, mes - 1);
+                if (dataMes >= dataAlvo) return; // só considera meses estritamente anteriores ao alvo
+
+                const contaMes = todasContas[chaveMes].find(c => c.nome === nomeConta);
+                if (!contaMes) return;
+
+                (contaMes.pessoas || []).forEach(pessoa => {
+                    (pessoa.compras || []).forEach(compra => {
+                        if (idsExcluir.has(compra.idUnico)) return; // faz parte deste lote de redirecionamento, tratada separadamente
+                        if (idsProcessados.has(compra.idUnico)) return; // já processada em outro mês
+
+                        const match = compra.parcelas ? compra.parcelas.match(/(\d+)\/(\d+)/) : null;
+                        if (!match) return;
+                        const totalParc = parseInt(match[2]);
+                        
+                        // NOVO: respeita o limite efetivo de parcelas caso esta compra tenha sido estornada
+                        const limiteParc = (compra._totalParcelasEfetivo !== undefined) ? compra._totalParcelasEfetivo : totalParc;
+
+                        const parcelaBase = compra._parcelaBase || parseInt(match[1]);
+                        const mesBaseCompra = compra._mesBase || chaveMes;
+                        const [anoBase, mesBaseN] = mesBaseCompra.split('-').map(Number);
+                        const diffMeses = (anoAlvo - anoBase) * 12 + (mesAlvo - mesBaseN);
+                        const parcelaAlvo = parcelaBase + diffMeses;
+
+                        if (parcelaAlvo < 1 || parcelaAlvo > limiteParc) return; // compra já finalizada, estornada, ou ainda não iniciada
+
+                        idsProcessados.add(compra.idUnico);
+
+                        pessoasResultado.push({
+                            nome: pessoa.nome,
+                            valor: compra.valorParcela,
+                            valorTotal: compra.valorTotal,
+                            parcelas: `${parcelaAlvo}/${totalParc}`,
+                            compras: [{
+                                ...compra,
+                                parcelas: `${parcelaAlvo}/${totalParc}`,
+                                _parcelaBase: parcelaBase,
+                                _mesBase: mesBaseCompra
+                            }],
+                            pago: false
+                        });
+                    });
+                });
+            });
+
+            return pessoasResultado;
+        }
+
+        function redirecionarCompraParaMesFatura(nomeConta, nomePessoa, idUnico, chaveOrigem, chaveDestino, idsUnicosLote) {
+            if (!chaveOrigem || !chaveDestino || chaveOrigem === chaveDestino) return;
+
+            const [anoOrigem, mesOrigem] = chaveOrigem.split('-').map(Number);
+            const [anoDestino, mesDestino] = chaveDestino.split('-').map(Number);
+            const deltaMeses = (anoDestino - anoOrigem) * 12 + (mesDestino - mesOrigem);
+
+            if (deltaMeses === 0) return;
+
+            const dataOrigem = new Date(anoOrigem, mesOrigem - 1);
+
+            adicionarLog(`🔀 REDIRECIONANDO compra "${idUnico}" de ${chaveOrigem} para ${chaveDestino} (delta=${deltaMeses} mês(es))`, 'importante');
+
+            // FASE 1: Percorrer os meses já existentes a partir do mês de origem e REMOVER
+            // as cópias desta compra, guardando-as para inserir depois. Isso evita que uma
+            // cópia recém-movida para um mês futuro seja processada de novo (efeito cascata)
+            // caso esse mês futuro já existisse previamente no armazenamento.
+            const movimentacoes = []; // { chaveDestinoCopia, compraMovida }
+
+            Object.keys(todasContas).sort().forEach(chaveMes => {
+                const [ano, mes] = chaveMes.split('-').map(Number);
+                const dataMes = new Date(ano, mes - 1);
+
+                if (dataMes < dataOrigem) return; // não mexe em meses anteriores ao lançamento
+
+                const contasMes = todasContas[chaveMes];
+                const contaMes = contasMes.find(c => c.nome === nomeConta);
+                if (!contaMes) return;
+
+                const pessoaMes = contaMes.pessoas.find(p => p.nome === nomePessoa && p.compras && p.compras.some(c => c.idUnico === idUnico));
+                if (!pessoaMes) return;
+
+                const compraIndex = pessoaMes.compras.findIndex(c => c.idUnico === idUnico);
+                if (compraIndex === -1) return;
+
+                const [compraMovida] = pessoaMes.compras.splice(compraIndex, 1);
+                compraMovida._mesBase = chaveDestino;
+
+                // Recalcular totais da pessoa no mês de origem após remover a compra
+                if (pessoaMes.compras.length > 0) {
+                    pessoaMes.valor = pessoaMes.compras.reduce((sum, c) => sum + (c.valorParcela || 0), 0);
+                    pessoaMes.valorTotal = pessoaMes.compras.reduce((sum, c) => sum + (c.valorTotal || 0), 0);
+                    pessoaMes.parcelas = pessoaMes.compras[0].parcelas;
+                } else {
+                    const idxPessoa = contaMes.pessoas.indexOf(pessoaMes);
+                    if (idxPessoa !== -1) contaMes.pessoas.splice(idxPessoa, 1);
+                }
+
+                contaMes.pago = contaMes.pessoas.length > 0 && contaMes.pessoas.every(p => p.pago);
+
+                // NOVO: NÃO remover a conta mesmo que fique sem pessoas neste mês —
+                // o container deve permanecer visível (vazio) no mês em que a conta existe,
+                // igual a uma conta recém-criada sem nenhuma compra ainda
+                
+                // Descobrir a chave do mês deslocado que corresponde a esta cópia específica
+                const dataDestinoCopia = new Date(ano, (mes - 1) + deltaMeses, 1);
+                const chaveDestinoCopia = `${dataDestinoCopia.getFullYear()}-${String(dataDestinoCopia.getMonth() + 1).padStart(2, '0')}`;
+
+                movimentacoes.push({ chaveDestinoCopia, compraMovida, contaBase: contaMes });
+
+                adicionarLog(`   ↪️ Cópia de ${chaveMes} será movida para ${chaveDestinoCopia}`, 'info');
+            });
+
+            // FASE 2: Inserir as cópias removidas em seus respectivos meses de destino
+            movimentacoes.forEach(({ chaveDestinoCopia, compraMovida, contaBase }) => {
+                if (!todasContas[chaveDestinoCopia]) {
+                    todasContas[chaveDestinoCopia] = [];
+                }
+
+                let contaDestino = todasContas[chaveDestinoCopia].find(c => c.nome === nomeConta);
+                if (!contaDestino) {
+                    // NOVO: ao criar um mês novo, reconstrói as demais compras em andamento
+                    // dessa conta (que não fazem parte deste redirecionamento específico),
+                    // para não deixar o mês incompleto permanentemente
+                    const idsExcluirReconstrucao = idsUnicosLote instanceof Set ? idsUnicosLote : new Set([idUnico]);
+                    const pessoasHistoricas = reconstruirComprasHistoricasParaNovoMes(nomeConta, chaveDestinoCopia, idsExcluirReconstrucao);
+                    contaDestino = { ...contaBase, id: Date.now() + Math.random(), pago: false, pessoas: pessoasHistoricas };
+                    todasContas[chaveDestinoCopia].push(contaDestino);
+                }
+
+                let pessoaDestino = contaDestino.pessoas.find(p => p.nome === nomePessoa);
+                if (!pessoaDestino) {
+                    pessoaDestino = { nome: nomePessoa, valor: 0, valorTotal: 0, parcelas: '', compras: [], pago: false };
+                    contaDestino.pessoas.push(pessoaDestino);
+                }
+
+                if (!pessoaDestino.compras) pessoaDestino.compras = [];
+                pessoaDestino.compras.push(compraMovida);
+                pessoaDestino.valor = pessoaDestino.compras.reduce((sum, c) => sum + (c.valorParcela || 0), 0);
+                pessoaDestino.valorTotal = pessoaDestino.compras.reduce((sum, c) => sum + (c.valorTotal || 0), 0);
+                pessoaDestino.parcelas = pessoaDestino.compras[0].parcelas;
+
+                contaDestino.pago = contaDestino.pessoas.length > 0 && contaDestino.pessoas.every(p => p.pago);
+            });
+
+            localStorage.setItem('todasContas', JSON.stringify(todasContas));
         }
         
         function carregarTodasContas() {
@@ -4002,8 +4245,14 @@ function voltarMes() {
                                                     const compraMatch = compra.parcelas ? compra.parcelas.match(/(\d+)\/(\d+)/) : null;
                                                     const compraTotalParc = compraMatch ? parseInt(compraMatch[2]) : totalParcelas;
                                                     
+                                                    // NOVO: se esta compra foi estornada, respeita o limite efetivo
+                                                    // de parcelas gravado na hora do estorno, em vez do total original
+                                                    const limiteParcelas = (compra._totalParcelasEfetivo !== undefined)
+                                                        ? compra._totalParcelasEfetivo
+                                                        : compraTotalParc;
+                                                    
                                                     // *** CORREÇÃO: Só adicionar se for válida E não ultrapassar total ***
-                                                    if (parcelaNoMesAtual <= compraTotalParc && parcelaNoMesAtual > 0) {
+                                                    if (parcelaNoMesAtual <= limiteParcelas && parcelaNoMesAtual > 0) {
                                                         contaAtual.pessoas.push({
                                                             nome: pessoa.nome,
                                                             valor: compra.valorParcela,
@@ -4735,6 +4984,19 @@ function consolidarPessoasPorNome(pessoas) {
                 // Propagar retroativamente se necessário
                 if (jaPagas > 0) {
                     adicionarCompraEmAndamentoRetroativa(contaEditando.nome, [pessoaTemp], jaPagas);
+                } else {
+                    // NOVO: redireciona esta compra para o mês de fatura correto do cartão,
+                    // se a conta for cartão com dia de fechamento definido e não for "em andamento"
+                    const redirecionamentoPessoa = calcularRedirecionamentoCartao(contaEditando.tipo, contaEditando.diaFechamento, contaEditando.tipoTransacao, false);
+                    if (redirecionamentoPessoa) {
+                        redirecionarCompraParaMesFatura(
+                            contaEditando.nome,
+                            pessoaTemp.nome,
+                            novaCompra.idUnico,
+                            redirecionamentoPessoa.chaveOrigem,
+                            redirecionamentoPessoa.chaveDestino
+                        );
+                    }
                 }
                 
                 carregarContasMesAtual();
@@ -5634,6 +5896,30 @@ function consolidarPessoasPorNome(pessoas) {
             adicionarLog(`   Valor já pago: R$ ${valorJaPago.toFixed(2)}`, 'info');
             adicionarLog(`   Parcelas pagas: ${parcelasPagas}`, 'info');
             
+            // NOVO: Marcar o limite efetivo de parcelas nas cópias PASSADAS (preservadas) desta
+            // compra, para que a geração dinâmica de meses futuros ainda não visitados não
+            // "ressuscite" esta compra além do ponto em que ela foi estornada
+            const limiteParcelasEfetivo = Math.max(0, parcelasPagas);
+            Object.keys(todasContas).forEach(chaveMes => {
+                const [ano, mes] = chaveMes.split('-').map(Number);
+                const dataMes = new Date(ano, mes - 1);
+                if (dataMes >= dataAtualMes) return; // apenas meses passados (preservados)
+                
+                const contasMes = todasContas[chaveMes];
+                if (!contasMes) return;
+                const contaEncontrada = contasMes.find(c => c.nome === contaEditando.nome);
+                if (!contaEncontrada) return;
+                
+                contaEncontrada.pessoas.forEach(p => {
+                    if (p.nome !== pessoa.nome || !p.compras) return;
+                    p.compras.forEach(c => {
+                        if (c.idUnico === compraIdUnico) {
+                            c._totalParcelasEfetivo = limiteParcelasEfetivo;
+                        }
+                    });
+                });
+            });
+            
             // PASSO 1: Remover parcelas futuras (mês atual e futuros) de todasContas
             Object.keys(todasContas).forEach(chaveMes => {
                 const [ano, mes] = chaveMes.split('-').map(Number);
@@ -5939,54 +6225,43 @@ function consolidarPessoasPorNome(pessoas) {
         }
 
         function abrirModalLimpar() {
+            atualizarBotaoToggleDebug();
             document.getElementById('modalLimpar').classList.add('ativo');
         }
 
         function fecharModalLimpar() {
             document.getElementById('modalLimpar').classList.remove('ativo');
         }
-function verificarEMigrarVersao() {
-            const versaoSalva = localStorage.getItem('versaoGestorFinanceiro');
-            
-            // Se não tem versão salva ou é diferente da atual
-            if (!versaoSalva) {
-                // Primeira vez usando o sistema de versão
-                console.log('Inicializando sistema de versionamento...');
-                localStorage.setItem('versaoGestorFinanceiro', VERSAO_ATUAL);
-                return;
-            }
-            
-            if (versaoSalva !== VERSAO_ATUAL) {
-                console.log(`Migração detectada: ${versaoSalva} → ${VERSAO_ATUAL}`);
-                
-                // Fazer backup automático antes da migração
-                fazerBackupAutomatico();
-                
-                // Executar migração
-                migrarDados(versaoSalva, VERSAO_ATUAL);
-                
-                // Atualizar versão
-                localStorage.setItem('versaoGestorFinanceiro', VERSAO_ATUAL);
-                
-                alert(`✅ Sistema atualizado!\n\nVersão anterior: ${versaoSalva}\nVersão atual: ${VERSAO_ATUAL}\n\n💾 Um backup automático foi criado.`);
-            }
+
+        // ============================================
+        // NOVO: Atualiza o texto/cor do botão de alternar o modo debug dentro
+        // da janela "Limpar Dados", refletindo o estado atual (ativo/inativo)
+        // ============================================
+        function atualizarBotaoToggleDebug() {
+            const btn = document.getElementById('btnToggleDebugPersistente');
+            if (!btn) return;
+            const ativo = debugEstaAtivo();
+            btn.textContent = ativo ? '🐛 Modo Debug: ATIVADO (toque para desativar)' : '🐛 Modo Debug: DESATIVADO (toque para ativar)';
+            btn.style.background = ativo ? '#28a745' : '#6c757d';
         }
-        
-        function migrarDados(versaoAntiga, versaoNova) {
-            console.log('Iniciando migração de dados...');
+
+        // ============================================
+        // NOVO: Liga/desliga o modo debug em tempo real, salvando a preferência
+        // no localStorage, sem precisar editar a constante MOSTRAR_DEBUG no HTML
+        // ============================================
+        function toggleModoDebugPersistente() {
+            const novoEstado = !debugEstaAtivo();
+            localStorage.setItem('debugAtivoOverride', novoEstado ? 'true' : 'false');
             
-            // Limpar cache e configurações antigas (NÃO toca nos dados financeiros)
-            limparCacheAntigo();
+            // Atualiza imediatamente todos os botões flutuantes de DEBUG na página
+            document.querySelectorAll('#btnDebug').forEach(btn => {
+                btn.style.display = novoEstado ? 'block' : 'none';
+            });
             
-            // Aqui você pode adicionar migrações específicas para cada versão
-            // Exemplo:
-            // if (versaoAntiga === '1.0' && versaoNova === '2.0') {
-            //     migrarDe1Para2();
-            // }
+            atualizarBotaoToggleDebug();
             
-            console.log('Migração concluída com sucesso!');
+            adicionarLog(`🐛 Modo debug ${novoEstado ? 'ATIVADO' : 'DESATIVADO'} manualmente pelo usuário`, 'importante');
         }
-        
         function limparCacheAntigo() {
             // Lista de chaves que podem ser limpas (cache, configurações, etc)
             const chavesParaLimpar = [
@@ -6005,44 +6280,6 @@ function verificarEMigrarVersao() {
                 }
             });
         }
-        
-        function fazerBackupAutomatico() {
-            try {
-                const agora = new Date();
-                const dia = String(agora.getDate()).padStart(2, '0');
-                const mes = String(agora.getMonth() + 1).padStart(2, '0');
-                const ano = agora.getFullYear();
-                const hora = String(agora.getHours()).padStart(2, '0');
-                const minuto = String(agora.getMinutes()).padStart(2, '0');
-                
-                const nomeArquivo = `GF_BACKUP_AUTO_${dia}-${mes}-${ano}_${hora}-${minuto}h.json`;
-                
-                const dadosBackup = {
-                    todasContas: todasContas,
-                    mesAtualSalvo: {
-                        ano: mesAtual.getFullYear(),
-                        mes: mesAtual.getMonth()
-                    },
-                    dataBackup: agora.toISOString(),
-                    versao: localStorage.getItem('versaoGestorFinanceiro') || 'desconhecida',
-                    tipo: 'backup_automatico'
-                };
-                
-                const blob = new Blob([JSON.stringify(dadosBackup, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = nomeArquivo;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(url);
-                
-                console.log('Backup automático criado:', nomeArquivo);
-            } catch (erro) {
-                console.error('Erro ao criar backup automático:', erro);
-            }
-        }
         function limparApenasCache() {
             const confirmar = confirm(
                 '🧹 Limpar Cache e Configurações?\n\n' +
@@ -6058,9 +6295,6 @@ function verificarEMigrarVersao() {
             
             // Limpar apenas cache e configurações
             limparCacheAntigo();
-            
-            // Forçar atualização da versão
-            localStorage.setItem('versaoGestorFinanceiro', VERSAO_ATUAL);
             
             // Fechar modal
             fecharModalLimpar();
@@ -6093,7 +6327,6 @@ function verificarEMigrarVersao() {
             localStorage.removeItem('todasContas');
             localStorage.removeItem('dataUltimaAtualizacao');
             localStorage.removeItem('mesAtualSalvo');
-            localStorage.removeItem('versaoGestorFinanceiro');
             limparCacheAntigo();
             
             // Resetar variáveis
@@ -6200,10 +6433,17 @@ function verificarEMigrarVersao() {
                 if (!contaRetro) {
                     const contaOriginal = contas.find(c => c.nome === nomeConta);
                     if (contaOriginal) {
+                        // NOVO: reconstrói as demais compras em andamento desta conta com
+                        // base no histórico, para não perder dados ao criar este mês
+                        // retroativo do zero. As compras sendo processadas nesta chamada
+                        // (pessoasAtualizadas) são tratadas separadamente logo abaixo.
+                        const idsExcluirRetro = new Set();
+                        pessoasAtualizadas.forEach(p => (p.compras || []).forEach(c => idsExcluirRetro.add(c.idUnico)));
+                        const pessoasHistoricasRetro = reconstruirComprasHistoricasParaNovoMes(nomeConta, chaveRetro, idsExcluirRetro);
                         contaRetro = {
                             ...contaOriginal,
                             id: Date.now() + Math.random(),
-                            pessoas: [],
+                            pessoas: pessoasHistoricasRetro,
                             pago: false
                         };
                         contasMesRetro.push(contaRetro);
@@ -6350,10 +6590,15 @@ function verificarEMigrarVersao() {
                         // Buscar referência da conta no mês atual
                         const contaReferencia = contas.find(c => c.nome === nomeConta);
                         if (contaReferencia) {
+                            // NOVO: reconstrói as demais compras em andamento desta conta
+                            // (de outras pessoas ou outras compras) com base no histórico,
+                            // para não perder dados ao criar este mês do zero. A compra que
+                            // está sendo editada é tratada separadamente pelas FASES 1 e 2 abaixo.
+                            const pessoasHistoricasEdicao = reconstruirComprasHistoricasParaNovoMes(nomeConta, chaveFutura, new Set([compraEditada.idUnico]));
                             contaNoMes = {
                                 ...contaReferencia,
                                 id: Date.now() + Math.random(),
-                                pessoas: [],
+                                pessoas: pessoasHistoricasEdicao,
                                 pago: false
                             };
                             todasContas[chaveFutura].push(contaNoMes);
@@ -6781,11 +7026,18 @@ function verificarEMigrarVersao() {
                     } else if (diffMeses > 0) {
                         // Conta não existe neste mês futuro - criar ela com as parcelas apropriadas
                         if (contaOriginal) {
+                            // NOVO: reconstrói as demais compras em andamento desta conta (de outras
+                            // pessoas/compras não incluídas nesta chamada) com base no histórico, para
+                            // não perder dados quando este mês já existe (por causa de outra conta)
+                            // mas esta conta específica ainda não tinha sido criada nele
+                            const idsExcluirPropagacao = new Set();
+                            pessoasParaPropagar.forEach(p => (p.compras || []).forEach(c => idsExcluirPropagacao.add(c.idUnico)));
+                            const pessoasHistoricasPropagacao = reconstruirComprasHistoricasParaNovoMes(nomeConta, chaveMes, idsExcluirPropagacao);
                             const novaConta = {
                                 ...contaOriginal,
                                 id: Date.now() + Math.random(),
                                 pago: false,
-                                pessoas: []
+                                pessoas: pessoasHistoricasPropagacao
                             };
                             
                             adicionarLog(`      Criando nova conta no mês ${chaveMes}`, 'info');
@@ -7159,6 +7411,12 @@ function verificarEMigrarVersao() {
             document.addEventListener('touchend', stopDragDebug);
             
             function startDragDebug(e) {
+                // NOVO: não iniciar o arrasto se o toque/clique foi em um botão dentro do
+                // cabeçalho (ex: o botão ✕ de fechar). Sem essa checagem, o preventDefault()
+                // do arrasto bloqueava o evento de clique do botão em telas touch, impedindo
+                // que a janela de debug fosse fechada.
+                if (e.target.closest('button')) return;
+                
                 debugDragging = true;
                 
                 const rect = debugPanel.getBoundingClientRect();
@@ -8082,44 +8340,6 @@ function adicionarNovaCompra(contaId) {
                     alert('❌ Erro ao construir formulário: ' + erro.message);
                 }
                 
-                console.log('🔍 Conteúdo HTML construído:', conteudo.substring(0, 200));
-                
-                try {
-                    adicionarLog(`   🔄 Fechando modalMenu...`, 'info');
-                    document.getElementById('modalMenu').classList.remove('ativo');
-                    adicionarLog(`   ✅ modalMenu fechado`, 'success');
-                    
-                    adicionarLog(`   🔄 Aguardando 150ms...`, 'info');
-                    setTimeout(() => {
-                        try {
-                            adicionarLog(`   🔄 Inserindo HTML no modalForm...`, 'info');
-                            document.getElementById('modalFormConteudo').innerHTML = conteudo;
-                            adicionarLog(`   ✅ HTML inserido`, 'success');
-                            
-                            adicionarLog(`   🔄 Abrindo modalForm...`, 'info');
-                            document.getElementById('modalForm').classList.add('ativo');
-                            adicionarLog(`   ✅ MODAL ABERTO COM SUCESSO!`, 'success');
-                        } catch (erro) {
-                            adicionarLog(`   ❌ ERRO ao abrir modal: ${erro.message}`, 'error');
-                            console.error('Erro detalhado:', erro);
-                        }
-                    }, 150);
-                } catch (erro) {
-                    adicionarLog(`   ❌ ERRO ao processar modal: ${erro.message}`, 'error');
-                    console.error('Erro detalhado:', erro);
-                }
-                adicionarLog(`   📏 Tamanho do HTML: ${conteudo.length} caracteres`, 'info');
-                
-                // Garantir que o modal anterior esteja fechado antes de abrir o novo
-                document.getElementById('modalMenu').classList.remove('ativo');
-                
-                // Pequeno delay para garantir que a transição funcione
-                setTimeout(() => {
-                    document.getElementById('modalFormConteudo').innerHTML = conteudo;
-                    document.getElementById('modalForm').classList.add('ativo');
-                    adicionarLog(`   ✅ MODAL ABERTO COM SUCESSO!`, 'success');
-                }, 150);
-                
             } else {
                 // MODO NORMAL (código original)
                 document.getElementById('modalFormTitulo').textContent = `Editar Pessoa/${tipoLabel}`;
@@ -8873,6 +9093,17 @@ function adicionarNovaCompra(contaId) {
         function salvarConta(e) {
             e.preventDefault();
             
+            // NOVO: guarda dados de TODAS as compras (Meu Valor + outras pessoas/parcerias)
+            // que precisam ser redirecionadas para o mês de fatura correto do cartão,
+            // com base no dia de fechamento. Compras "em andamento" nunca entram aqui.
+            let comprasCartaoParaRedirecionar = [];
+            
+            // NOVO: dados da conta usados para decidir o redirecionamento de cartão,
+            // lidos uma única vez e reaproveitados em todos os pontos de criação de compra
+            const tipoContaFormAtual = document.getElementById('tipoConta').value;
+            const diaFechamentoFormAtual = document.getElementById('diaFechamento').value ? parseInt(document.getElementById('diaFechamento').value) : null;
+            const tipoTransacaoFormAtual = document.getElementById('tipoTransacao').value;
+            
             const meuValor = parseFloat(document.getElementById('meuValor').value) || 0;
             
             const pessoas = [...pessoasTemp];
@@ -8913,6 +9144,17 @@ function adicionarNovaCompra(contaId) {
                 const dataCompraAtual = new Date().toISOString();
                 const chaveAtual = getChaveMes();
                 
+                // ============================================
+                // NOVO: Se for compra em conta de cartão com dia de fechamento definido,
+                // calcula automaticamente o mês de fatura correto com base na data REAL
+                // de hoje, para evitar lançamento no mês errado.
+                // NÃO se aplica a compras "em andamento" (parcelas já pagas), pois estas
+                // já possuem lógica própria de meses retroativos ligada ao mês em exibição.
+                // ============================================
+                const ehEmAndamentoEu = document.getElementById('compraEmAndamento').checked;
+                const redirecionamentoEu = calcularRedirecionamentoCartao(tipoContaFormAtual, diaFechamentoFormAtual, tipoTransacaoFormAtual, ehEmAndamentoEu);
+                const chaveFaturaCompra = redirecionamentoEu ? redirecionamentoEu.chaveDestino : chaveAtual;
+                
                 const novaCompra = {
                     nome: nomeCompraInicial,
                     valorTotal: meuValor,
@@ -8922,8 +9164,19 @@ function adicionarNovaCompra(contaId) {
                     idUnico: dataCompraAtual + '_' + nomeCompraInicial,
                     observacoes: observacoesForm,
                     _parcelaBase: (document.getElementById('compraEmAndamento').checked) ? (jaPagas + 1) : 1,
-                    _mesBase: chaveAtual
+                    _mesBase: chaveFaturaCompra
                 };
+                
+                // NOVO: se houver redirecionamento aplicável, marca esta compra para ser
+                // movida ao mês de fatura correto após o salvamento normal
+                if (redirecionamentoEu) {
+                    comprasCartaoParaRedirecionar.push({
+                        nomePessoa: 'Eu',
+                        idUnico: novaCompra.idUnico,
+                        chaveOrigem: redirecionamentoEu.chaveOrigem,
+                        chaveDestino: redirecionamentoEu.chaveDestino
+                    });
+                }
                 
                 adicionarLog(`💰 PROCESSANDO "MEU VALOR"`, 'importante');
                 adicionarLog(`   Valor: R$ ${meuValor.toFixed(2)}`, 'info');
@@ -9067,7 +9320,12 @@ function adicionarNovaCompra(contaId) {
                 const temNovasPessoasTemp = pessoasTemp.length > 0;
                 
                 // *** CORREÇÃO CRÍTICA: Verificar se "Eu" está em pessoasTemp (foi editado) ***
-                const pessoaEuEmTemp = pessoasTemp.find(p => p.nome === 'Eu');
+                // NOVO: exclui entradas de "Eu" que sejam de PARCERIA — essas devem ser tratadas
+                // exclusivamente pelo loop genérico de "PROCESSAR OUTRAS PESSOAS" mais abaixo,
+                // que já sabe diferenciar parceria de individual. Sem esse filtro, uma compra em
+                // parceria envolvendo "Eu" era processada duas vezes (aqui E no loop genérico),
+                // gerando pessoas duplicadas e quebrando o redirecionamento de fatura do cartão.
+                const pessoaEuEmTemp = pessoasTemp.find(p => p.nome === 'Eu' && !(p.compras && p.compras.length > 0 && p.compras.every(c => c._parceria)));
                 
                 // Identificar pessoas que foram REMOVIDAS
                 const pessoaEuExistia = contaExistente.pessoas.find(p => p.nome === 'Eu');
@@ -9128,6 +9386,22 @@ function adicionarNovaCompra(contaId) {
                                 ...pessoaEuEmTemp,
                                 compras: comprasNovasEuTemp
                             }]);
+                            
+                            // NOVO: só redireciona para o mês de fatura correto quando NÃO for
+                            // compra "em andamento" (parcelas já pagas)
+                            if (!(pessoaEuEmTemp.parcelasJaPagas && pessoaEuEmTemp.parcelasJaPagas > 0)) {
+                                const redirecionamentoEuTemp = calcularRedirecionamentoCartao(tipoContaFormAtual, diaFechamentoFormAtual, tipoTransacaoFormAtual, false);
+                                if (redirecionamentoEuTemp) {
+                                    comprasNovasEuTemp.forEach(compraNova => {
+                                        comprasCartaoParaRedirecionar.push({
+                                            nomePessoa: 'Eu',
+                                            idUnico: compraNova.idUnico,
+                                            chaveOrigem: redirecionamentoEuTemp.chaveOrigem,
+                                            chaveDestino: redirecionamentoEuTemp.chaveDestino
+                                        });
+                                    });
+                                }
+                            }
                         }
                     } else {
                         // "Eu" não existia antes — propagar todas as compras
@@ -9137,6 +9411,22 @@ function adicionarNovaCompra(contaId) {
                                 ...pessoaEuEmTemp,
                                 compras: comprasIndividuais
                             }]);
+                            
+                            // NOVO: só redireciona para o mês de fatura correto quando NÃO for
+                            // compra "em andamento" (parcelas já pagas)
+                            if (!(pessoaEuEmTemp.parcelasJaPagas && pessoaEuEmTemp.parcelasJaPagas > 0)) {
+                                const redirecionamentoEuTemp = calcularRedirecionamentoCartao(tipoContaFormAtual, diaFechamentoFormAtual, tipoTransacaoFormAtual, false);
+                                if (redirecionamentoEuTemp) {
+                                    comprasIndividuais.forEach(compraNova => {
+                                        comprasCartaoParaRedirecionar.push({
+                                            nomePessoa: 'Eu',
+                                            idUnico: compraNova.idUnico,
+                                            chaveOrigem: redirecionamentoEuTemp.chaveOrigem,
+                                            chaveDestino: redirecionamentoEuTemp.chaveDestino
+                                        });
+                                    });
+                                }
+                            }
                         }
                     }
                     
@@ -9402,6 +9692,20 @@ function adicionarNovaCompra(contaId) {
                                         ...novaPessoa,
                                         compras: comprasAdicionadas
                                     }], novaPessoa.parcelasJaPagas);
+                                } else {
+                                    // NOVO: só redireciona para o mês de fatura correto quando NÃO for
+                                    // compra "em andamento" (parcelas já pagas)
+                                    const redirecionamentoPessoa = calcularRedirecionamentoCartao(tipoContaFormAtual, diaFechamentoFormAtual, tipoTransacaoFormAtual, false);
+                                    if (redirecionamentoPessoa) {
+                                        comprasAdicionadas.forEach(compraNova => {
+                                            comprasCartaoParaRedirecionar.push({
+                                                nomePessoa: novaPessoa.nome,
+                                                idUnico: compraNova.idUnico,
+                                                chaveOrigem: redirecionamentoPessoa.chaveOrigem,
+                                                chaveDestino: redirecionamentoPessoa.chaveDestino
+                                            });
+                                        });
+                                    }
                                 }
                             }
                             
@@ -9463,6 +9767,20 @@ function adicionarNovaCompra(contaId) {
                         if (novaPessoa.parcelasJaPagas && novaPessoa.parcelasJaPagas > 0) {
                             adicionarLog(`   🔄 Processando ${novaPessoa.parcelasJaPagas} parcelas retroativas ANTES de propagar`, 'warning');
                             adicionarCompraEmAndamentoRetroativa(nomeContaNovo, [novaPessoa], novaPessoa.parcelasJaPagas);
+                        } else {
+                            // NOVO: só redireciona para o mês de fatura correto quando NÃO for
+                            // compra "em andamento" (parcelas já pagas)
+                            const redirecionamentoPessoa = calcularRedirecionamentoCartao(tipoContaFormAtual, diaFechamentoFormAtual, tipoTransacaoFormAtual, false);
+                            if (redirecionamentoPessoa && novaPessoa.compras && novaPessoa.compras.length > 0) {
+                                novaPessoa.compras.forEach(compraNova => {
+                                    comprasCartaoParaRedirecionar.push({
+                                        nomePessoa: novaPessoa.nome,
+                                        idUnico: compraNova.idUnico,
+                                        chaveOrigem: redirecionamentoPessoa.chaveOrigem,
+                                        chaveDestino: redirecionamentoPessoa.chaveDestino
+                                    });
+                                });
+                            }
                         }
                         
                         // DEPOIS: Propagar para meses futuros
@@ -9534,6 +9852,20 @@ function adicionarNovaCompra(contaId) {
                     if (pessoaTemp.parcelasJaPagas && pessoaTemp.parcelasJaPagas > 0) {
                         adicionarLog(`🔄 Processando "${pessoaTemp.nome}" com ${pessoaTemp.parcelasJaPagas} parcelas já pagas`, 'warning');
                         adicionarCompraEmAndamentoRetroativa(conta.nome, [pessoaTemp], pessoaTemp.parcelasJaPagas);
+                    } else {
+                        // NOVO: só redireciona para o mês de fatura correto quando NÃO for
+                        // compra "em andamento" (parcelas já pagas)
+                        const redirecionamentoPessoa = calcularRedirecionamentoCartao(tipoContaFormAtual, diaFechamentoFormAtual, tipoTransacaoFormAtual, false);
+                        if (redirecionamentoPessoa && pessoaTemp.compras && pessoaTemp.compras.length > 0) {
+                            pessoaTemp.compras.forEach(compraNova => {
+                                comprasCartaoParaRedirecionar.push({
+                                    nomePessoa: pessoaTemp.nome,
+                                    idUnico: compraNova.idUnico,
+                                    chaveOrigem: redirecionamentoPessoa.chaveOrigem,
+                                    chaveDestino: redirecionamentoPessoa.chaveDestino
+                                });
+                            });
+                        }
                     }
                 });
                 
@@ -9548,6 +9880,23 @@ function adicionarNovaCompra(contaId) {
             
             // Salvar SEMPRE, independente do fluxo
             salvarNoStorage();
+            
+            // NOVO: Se houver compras (Meu Valor e/ou outras pessoas/parcerias) que precisam
+            // ser redirecionadas para o mês de fatura correto do cartão, move todas agora.
+            // Monta o conjunto completo de idUnicos deste lote para que, ao criar um mês novo,
+            // a reconstrução histórica não duplique uma compra que ainda será redirecionada
+            // por uma chamada seguinte neste mesmo laço.
+            const idsUnicosLoteRedirecionamento = new Set(comprasCartaoParaRedirecionar.map(item => item.idUnico));
+            comprasCartaoParaRedirecionar.forEach(item => {
+                redirecionarCompraParaMesFatura(
+                    nomeContaNovo,
+                    item.nomePessoa,
+                    item.idUnico,
+                    item.chaveOrigem,
+                    item.chaveDestino,
+                    idsUnicosLoteRedirecionamento
+                );
+            });
             
             // FORÇAR recarga completa do localStorage
             const dadosAtualizados = localStorage.getItem('todasContas');
@@ -11838,10 +12187,13 @@ function mostrarDetalhesValor(contaId) {
                                     });
                                     
                                     let html = '';
+                                    let htmlParceria = '';
+                                    let htmlEuIndividual = '';
+                                    let htmlOutrosIndividuais = '';
                                     
                                     // Renderizar compras em parceria
                                     comprasParceria.forEach((grupo, idBase) => {
-                                        html += `
+                                        htmlParceria += `
                                             <div class="pessoa ${grupo.todospagos ? 'pago' : ''}" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
                                                 <span onclick="abrirModalMarcarParceria('${idBase.replace(/'/g, "\\'")}', ${conta.id})" style="flex: 1; user-select: none;">
                                                     ${grupo.nome} (P. 👥): R$ ${grupo.valorTotal.toFixed(2)} ${grupo.todospagos ? '✓' : ''}
@@ -11877,7 +12229,7 @@ function mostrarDetalhesValor(contaId) {
                                         const valorMostrar = p._valorPagoReal !== undefined ? p._valorPagoReal : valorReal;
                                         const temValorAlterado = p._valorPagoReal !== undefined && p._valorPagoReal !== p.valor;
                                         
-                                        html += `
+                                        const htmlLinhaPessoa = `
                                             <div class="pessoa ${p.pago ? 'pago' : ''}" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;" data-pessoa-index="${i}">
                                                 <span 
                                                     onclick="${(conta.tipoTransacao === 'recebimento' || conta.tipoTransacao === 'pagamento-custom') && !p.pago ? (conta.tipoTransacao === 'recebimento' ? `abrirModalPagamentoRecebimento(${conta.id}, ${i})` : `abrirModalPagamentoCustom(${conta.id}, ${i})`) : `togglePagoPessoa(${conta.id}, ${i})`}" 
@@ -11890,7 +12242,19 @@ function mostrarDetalhesValor(contaId) {
                                                 ${temCompras ? `<span onclick="mostrarDetalhesPessoa(${conta.id}, ${i})" style="color: #667eea; font-size: 11px; margin-left: 8px; white-space: nowrap;" title="Ver detalhes">ℹ️ detalhes</span>` : ''}
                                             </div>
                                         `;
+                                        
+                                        // NOVO: separa a linha de "Eu" das demais, para poder colocá-la
+                                        // sempre no topo da lista (acima inclusive das compras em parceria)
+                                        if (p.nome === 'Eu') {
+                                            htmlEuIndividual += htmlLinhaPessoa;
+                                        } else {
+                                            htmlOutrosIndividuais += htmlLinhaPessoa;
+                                        }
                                     });
+                                    
+                                    // NOVO: "Eu" sempre no topo (mesmo acima das compras em parceria),
+                                    // seguido das compras em parceria e das demais pessoas na ordem de adição
+                                    html = htmlEuIndividual + htmlParceria + htmlOutrosIndividuais;
                                     
                                     return html;
                                 })()}
