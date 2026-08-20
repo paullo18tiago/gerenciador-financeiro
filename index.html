@@ -484,6 +484,15 @@
             background: #218838;
         }
 
+        .menu-backup-btn-pasta {
+            background: linear-gradient(135deg, #17a2b8, #007bff);
+            color: white;
+        }
+
+        .menu-backup-btn-pasta:hover {
+            background: linear-gradient(135deg, #148a9c, #006ae0);
+        }
+
         .menu-backup-btn-carregar {
             background: #ffc107;
             color: #333;
@@ -1745,6 +1754,9 @@
         <div class="menu-backup" id="menuBackup">
             <button class="menu-backup-btn menu-backup-btn-salvar" onclick="salvarBackup()">
                 💾 Salvar Backup
+            </button>
+            <button class="menu-backup-btn menu-backup-btn-pasta" id="btnSalvarBackupPasta" onclick="salvarBackupEmPastaEscolhida()" style="display: none;" title="Escolher a pasta onde salvar (disponível em navegadores compatíveis)">
+                📁 Salvar em:
             </button>
             <button class="menu-backup-btn menu-backup-btn-carregar" onclick="document.getElementById('inputCarregarBackup').click()">
                 📂 Carregar Backup
@@ -3474,6 +3486,15 @@ function voltarMes() {
             const btnDebug = document.getElementById('btnDebug');
             if (btnDebug) {
                 btnDebug.style.display = debugEstaAtivo() ? 'block' : 'none';
+            }
+            
+            // NOVO: Mostrar/ocultar o botão opcional "Salvar em Pasta Escolhida"
+            // conforme o navegador — só aparece se a API showSaveFilePicker
+            // existir E o navegador não estiver na lista de navegadores
+            // conhecidos por travar nela (ver navegadorComSeletorQuebrado)
+            const btnSalvarBackupPasta = document.getElementById('btnSalvarBackupPasta');
+            if (btnSalvarBackupPasta) {
+                btnSalvarBackupPasta.style.display = (window.showSaveFilePicker && !navegadorComSeletorQuebrado()) ? 'block' : 'none';
             }
             
             atualizarVisualizacao();
@@ -7479,7 +7500,30 @@ function consolidarPessoasPorNome(pessoas) {
             menu.classList.toggle('ativo');
         }
 
-        function salvarBackup() {
+        // ============================================
+        // NOVO: Alguns navegadores Android (ex: XBrowser, Navegador Mi/MIUI, Soul
+        // Browser, Stargon) informam suporte ao seletor nativo showSaveFilePicker,
+        // mas na prática a chamada trava ou falha silenciosamente. Esta função
+        // reconhece os que já identificamos pelo user-agent, para que o botão
+        // opcional "Salvar em Pasta Escolhida" nem apareça neles — evitando que
+        // o usuário clique em algo que não vai funcionar. Navegadores compatíveis
+        // (Chrome, Edge, etc.) continuam vendo o botão normalmente.
+        // ============================================
+        function navegadorComSeletorQuebrado() {
+            const ua = navigator.userAgent || '';
+            return /xbrowser/i.test(ua) ||     // XBrowser (com.mmbox.xbrowser / com.xbrowser.play)
+                   /miuibrowser/i.test(ua) ||  // Navegador Mi / MIUI Browser (Xiaomi)
+                   /soulbrowser/i.test(ua) ||  // Soul Browser (com.mycompany.app.soulbrowser)
+                   /stargon/i.test(ua);        // Stargon (net.onecook.browser)
+        }
+
+        // ============================================
+        // NOVO: Monta os dados do backup (nome do arquivo e o JSON) de forma
+        // compartilhada entre o botão clássico "Salvar Backup" e o botão
+        // opcional "Salvar em Pasta Escolhida", evitando duplicar essa lógica
+        // e garantindo que os dois gerem exatamente o mesmo conteúdo
+        // ============================================
+        function prepararDadosBackup() {
             const agora = new Date();
             const dia = String(agora.getDate()).padStart(2, '0');
             const mes = String(agora.getMonth() + 1).padStart(2, '0');
@@ -7487,9 +7531,9 @@ function consolidarPessoasPorNome(pessoas) {
             const hora = String(agora.getHours()).padStart(2, '0');
             const minuto = String(agora.getMinutes()).padStart(2, '0');
             const segundo = String(agora.getSeconds()).padStart(2, '0');
-            
+
             const nomeArquivo = `GF_${dia}-${mes}-${ano}_${hora}-${minuto}-${segundo}h.json`;
-            
+
             const dadosBackup = {
                 todasContas: todasContas,
                 contasExcluidas: contasExcluidas || {}, // *** NOVO: Incluir contas excluídas no backup ***
@@ -7500,8 +7544,31 @@ function consolidarPessoasPorNome(pessoas) {
                 dataBackup: agora.toISOString(),
                 versao: '1.0'
             };
-            
-            const blob = new Blob([JSON.stringify(dadosBackup)], { type: 'application/json' }); // *** OTIMIZAÇÃO: JSON sem indentação, gerado mais rápido, download mais instantâneo ***
+
+            const jsonString = JSON.stringify(dadosBackup); // *** OTIMIZAÇÃO: JSON sem indentação, gerado mais rápido, download mais instantâneo ***
+
+            return { nomeArquivo, jsonString };
+        }
+
+        // ============================================
+        // NOVO: função voltou a ser 100% síncrona (sem async/await), IDÊNTICA
+        // à versão antiga do HTML. Motivo: em navegadores como XBrowser e Soul
+        // Browser, mesmo um pequeno atraso assíncrono antes do download (ex:
+        // esperar uma Promise ou um setTimeout) já é suficiente para invalidar
+        // o "gesto do usuário" exigido para salvar o arquivo — o download só
+        // funciona se acontecer 100% dentro da mesma pilha de execução síncrona
+        // do clique do botão, sem nenhum await no meio do caminho. Por isso
+        // este botão principal NÃO tenta mais o seletor nativo de pasta — ele
+        // usa direto o método clássico (download para a pasta padrão), que é
+        // comprovadamente o que funciona em TODOS os navegadores testados. O
+        // seletor nativo de pasta continua disponível, mas como uma opção
+        // separada (ver botão/função salvarBackupEmPastaEscolhida), para quem
+        // estiver em um navegador compatível e quiser escolher a pasta.
+        // ============================================
+        function salvarBackup() {
+            const { nomeArquivo, jsonString } = prepararDadosBackup();
+
+            const blob = new Blob([jsonString], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
@@ -7517,6 +7584,44 @@ function consolidarPessoasPorNome(pessoas) {
             
             toggleMenuBackup();
             alert('✅ Backup salvo com sucesso!\n\n📁 Arquivo: ' + nomeArquivo);
+        }
+
+        // ============================================
+        // NOVO: botão opcional — só aparece quando o navegador tem suporte ao
+        // seletor nativo de "Salvar como" (showSaveFilePicker) e não está na
+        // lista de navegadores conhecidos por travar nele (ver
+        // navegadorComSeletorQuebrado e a inicialização do app). Como é
+        // uma ação separada e explícita do usuário (não um fallback automático
+        // dentro do botão principal), um atraso assíncrono aqui não tem o
+        // problema de invalidar o gesto do usuário do botão "Salvar Backup" —
+        // se o seletor falhar ou travar, apenas avisa o usuário para usar o
+        // botão "💾 Salvar Backup" normal em vez de tentar mascarar o erro.
+        // ============================================
+        async function salvarBackupEmPastaEscolhida() {
+            const { nomeArquivo, jsonString } = prepararDadosBackup();
+
+            try {
+                const handle = await window.showSaveFilePicker({
+                    suggestedName: nomeArquivo,
+                    types: [{
+                        description: 'Backup do Gestor Financeiro',
+                        accept: { 'application/json': ['.json'] }
+                    }]
+                });
+                const writable = await handle.createWritable();
+                await writable.write(jsonString);
+                await writable.close();
+
+                toggleMenuBackup();
+                alert('✅ Backup salvo com sucesso!\n\n📁 Arquivo: ' + nomeArquivo);
+            } catch (erro) {
+                if (erro.name === 'AbortError') {
+                    // Usuário cancelou o seletor de pasta — não faz nada
+                    return;
+                }
+                console.warn('Seletor de pasta falhou:', erro);
+                alert('⚠️ Não foi possível abrir o seletor de pasta neste navegador.\n\nUse o botão "💾 Salvar Backup" normal, que funciona em qualquer navegador.');
+            }
         }
 
         function carregarBackup(event) {
