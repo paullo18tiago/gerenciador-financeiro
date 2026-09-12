@@ -3584,52 +3584,57 @@ function voltarMes() {
             const idsExcluir = idsUnicosExcluir instanceof Set ? idsUnicosExcluir : new Set([idsUnicosExcluir]);
             const [anoAlvo, mesAlvo] = chaveMesAlvo.split('-').map(Number);
             const dataAlvo = new Date(anoAlvo, mesAlvo - 1);
-            const idsProcessados = new Set();
             const pessoasResultado = [];
 
+            // CORREÇÃO: em vez de percorrer TODO o histórico e usar a primeira
+            // ocorrência encontrada de cada compra (o que fazia compras já editadas,
+            // substituídas ou excluídas em meses mais recentes "ressuscitarem" a
+            // partir de um snapshot antigo), localizamos apenas o mês já existente
+            // MAIS RECENTE (mais próximo do mês alvo) desta conta e usamos ele como
+            // base real da projeção. Assim, qualquer exclusão/edição já aplicada a
+            // essa conta em meses posteriores é respeitada.
+            let chaveMesReferencia = null;
             Object.keys(todasContas).sort().forEach(chaveMes => {
                 const [ano, mes] = chaveMes.split('-').map(Number);
                 const dataMes = new Date(ano, mes - 1);
                 if (dataMes >= dataAlvo) return; // só considera meses estritamente anteriores ao alvo
+                if (!todasContas[chaveMes].find(c => c.nome === nomeConta)) return;
+                chaveMesReferencia = chaveMes; // como percorremos em ordem crescente, o último atribuído é o mais recente
+            });
 
-                const contaMes = todasContas[chaveMes].find(c => c.nome === nomeConta);
-                if (!contaMes) return;
+            if (!chaveMesReferencia) return pessoasResultado; // nenhum mês anterior possui esta conta
 
-                (contaMes.pessoas || []).forEach(pessoa => {
-                    (pessoa.compras || []).forEach(compra => {
-                        if (idsExcluir.has(compra.idUnico)) return; // faz parte deste lote de redirecionamento, tratada separadamente
-                        if (idsProcessados.has(compra.idUnico)) return; // já processada em outro mês
+            const [anoRef, mesRef] = chaveMesReferencia.split('-').map(Number);
+            const diffMeses = (anoAlvo - anoRef) * 12 + (mesAlvo - mesRef);
+            const contaReferencia = todasContas[chaveMesReferencia].find(c => c.nome === nomeConta);
 
-                        const match = compra.parcelas ? compra.parcelas.match(/(\d+)\/(\d+)/) : null;
-                        if (!match) return;
-                        const totalParc = parseInt(match[2]);
-                        
-                        // NOVO: respeita o limite efetivo de parcelas caso esta compra tenha sido estornada
-                        const limiteParc = (compra._totalParcelasEfetivo !== undefined) ? compra._totalParcelasEfetivo : totalParc;
+            (contaReferencia.pessoas || []).forEach(pessoa => {
+                (pessoa.compras || []).forEach(compra => {
+                    if (idsExcluir.has(compra.idUnico)) return; // faz parte deste lote de redirecionamento, tratada separadamente
 
-                        const parcelaBase = compra._parcelaBase || parseInt(match[1]);
-                        const mesBaseCompra = compra._mesBase || chaveMes;
-                        const [anoBase, mesBaseN] = mesBaseCompra.split('-').map(Number);
-                        const diffMeses = (anoAlvo - anoBase) * 12 + (mesAlvo - mesBaseN);
-                        const parcelaAlvo = parcelaBase + diffMeses;
+                    const match = compra.parcelas ? compra.parcelas.match(/(\d+)\/(\d+)/) : null;
+                    if (!match) return; // compras avulsas (sem parcelamento) não se repetem sozinhas
 
-                        if (parcelaAlvo < 1 || parcelaAlvo > limiteParc) return; // compra já finalizada, estornada, ou ainda não iniciada
+                    const parcelaRef = parseInt(match[1]);
+                    const totalParc = parseInt(match[2]);
 
-                        idsProcessados.add(compra.idUnico);
+                    // NOVO: respeita o limite efetivo de parcelas caso esta compra tenha sido estornada
+                    const limiteParc = (compra._totalParcelasEfetivo !== undefined) ? compra._totalParcelasEfetivo : totalParc;
 
-                        pessoasResultado.push({
-                            nome: pessoa.nome,
-                            valor: compra.valorParcela,
-                            valorTotal: compra.valorTotal,
-                            parcelas: `${parcelaAlvo}/${totalParc}`,
-                            compras: [{
-                                ...compra,
-                                parcelas: `${parcelaAlvo}/${totalParc}`,
-                                _parcelaBase: parcelaBase,
-                                _mesBase: mesBaseCompra
-                            }],
-                            pago: false
-                        });
+                    const parcelaAlvo = parcelaRef + diffMeses;
+
+                    if (parcelaAlvo < 1 || parcelaAlvo > limiteParc) return; // compra já finalizada, estornada, ou ainda não iniciada
+
+                    pessoasResultado.push({
+                        nome: pessoa.nome,
+                        valor: compra.valorParcela,
+                        valorTotal: compra.valorTotal,
+                        parcelas: `${parcelaAlvo}/${totalParc}`,
+                        compras: [{
+                            ...compra,
+                            parcelas: `${parcelaAlvo}/${totalParc}`
+                        }],
+                        pago: false
                     });
                 });
             });
@@ -5318,6 +5323,71 @@ function consolidarPessoasPorNome(pessoas) {
                     }
                 } else {
                     parcelasTexto = numParcelas > 1 ? `1/${numParcelas}` : '';
+                }
+
+                // NOVO: Propagar esta edição (nome/valor/nº de parcelas) para os meses
+                // FUTUROS que já existiam no armazenamento. Sem isso, uma compra que já
+                // havia sido projetada para meses futuros (ex.: 2/4, 3/4...) e depois foi
+                // editada (parcelamento removido/alterado, valor corrigido, etc.) deixava
+                // "fantasmas" com os dados antigos nesses meses futuros já criados.
+                if (contaEditando) {
+                    const idUnicoAlvo = compraOriginal.idUnico;
+                    const parcelaBaseFinal = compraOriginal._parcelaBase || 1;
+                    const mesBaseFinal = compraOriginal._mesBase || getChaveMes();
+                    const [anoBaseFinal, mesBaseFinalN] = mesBaseFinal.split('-').map(Number);
+                    const chaveAtualEdicao = getChaveMes();
+                    const [anoAtualEdicao, mesAtualEdicaoN] = chaveAtualEdicao.split('-').map(Number);
+                    const dataAtualEdicao = new Date(anoAtualEdicao, mesAtualEdicaoN - 1);
+
+                    Object.keys(todasContas).forEach(chaveMes => {
+                        const [anoMes, mesMes] = chaveMes.split('-').map(Number);
+                        const dataMesEdicao = new Date(anoMes, mesMes - 1);
+                        if (dataMesEdicao <= dataAtualEdicao) return; // mês atual/passado já é tratado pelo fluxo normal
+
+                        const contaEncontradaEdicao = todasContas[chaveMes].find(c => c.nome === contaEditando.nome);
+                        if (!contaEncontradaEdicao) return;
+
+                        const diffMesesEdicao = (anoMes - anoBaseFinal) * 12 + (mesMes - mesBaseFinalN);
+                        const parcelaNesseMes = parcelaBaseFinal + diffMesesEdicao;
+                        const aindaAtiva = numParcelas > 1 && parcelaNesseMes >= 1 && parcelaNesseMes <= numParcelas;
+
+                        contaEncontradaEdicao.pessoas.forEach(p => {
+                            if (p.nome !== pessoa.nome || !p.compras) return;
+                            const idxCompra = p.compras.findIndex(c => c.idUnico === idUnicoAlvo);
+                            if (idxCompra === -1) return;
+
+                            if (aindaAtiva) {
+                                p.compras[idxCompra] = {
+                                    ...p.compras[idxCompra],
+                                    nome: nomeCompra,
+                                    valorTotal: valorTotal,
+                                    valorParcela: valorParcela,
+                                    parcelas: `${parcelaNesseMes}/${numParcelas}`,
+                                    observacoes: observacoes,
+                                    _parcelaBase: parcelaBaseFinal,
+                                    _mesBase: mesBaseFinal
+                                };
+                            } else {
+                                // Parcela já finalizada/excedente com o novo total, ou compra
+                                // avulsa que não se repete: remove a cópia obsoleta deste mês futuro
+                                p.compras.splice(idxCompra, 1);
+                            }
+
+                            if (p.compras.length > 0) {
+                                p.valor = p.compras.reduce((sum, c) => sum + (c.valorParcela || 0), 0);
+                                p.valorTotal = p.compras.reduce((sum, c) => sum + (c.valorTotal || 0), 0);
+                            }
+                        });
+
+                        // Remove pessoas que ficaram sem nenhuma compra por causa desta limpeza
+                        contaEncontradaEdicao.pessoas = contaEncontradaEdicao.pessoas.filter(p => p.nome !== pessoa.nome || (p.compras && p.compras.length > 0));
+
+                        if (contaEncontradaEdicao.pessoas.length > 0) {
+                            contaEncontradaEdicao.pago = contaEncontradaEdicao.pessoas.every(p => p.pago);
+                        }
+                    });
+
+                    localStorage.setItem('todasContas', JSON.stringify(todasContas));
                 }
             }
             
