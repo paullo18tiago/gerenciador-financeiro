@@ -2951,18 +2951,33 @@ function voltarMes() {
                     }
                     
                     if (pessoaFutura && pessoaFutura.compras && pessoaFutura.compras.length > 0) {
-                        const compraFutura = pessoaFutura.compras[0];
+                        // CORREÇÃO: localizar a compra correta por idUnico. Usar sempre
+                        // compras[0] fazia o abatimento ser aplicado na compra ERRADA
+                        // sempre que a pessoa tivesse mais de uma compra naquele mês.
+                        const compraFutura = pessoaFutura.compras.find(c => c.idUnico === compra.idUnico) || pessoaFutura.compras[0];
                         const valorOriginal = compraFutura.valorParcela;
+
+                        // Recalcula o valor total da pessoa somando TODAS as compras
+                        // (e não apenas a que está sendo ajustada), preservando as demais.
+                        const recalcularValorPessoa = () => {
+                            pessoaFutura.valor = arredondarMoeda(pessoaFutura.compras.reduce((s, c) => s + (c.valorParcela || 0), 0));
+                        };
                         
                         if (ehExcedente) {
                             // ===== PAGOU A MAIS: ABATER =====
                             if (saldoRestante >= valorOriginal) {
-                                // Zerar completamente E marcar como pago
-                                pessoaFutura.valor = 0;
-                                pessoaFutura.pago = true;
-                                pessoaFutura._valorPagoReal = 0;
+                                // Zerar completamente esta compra
                                 compraFutura.valorParcela = 0;
                                 saldoRestante -= valorOriginal;
+                                recalcularValorPessoa();
+
+                                // Só marca a pessoa como paga se TODAS as compras dela já
+                                // estiverem zeradas (senão ainda resta saldo de outras compras)
+                                const todasComprasZeradas = pessoaFutura.compras.every(c => (c.valorParcela || 0) <= 0.01);
+                                if (todasComprasZeradas) {
+                                    pessoaFutura.pago = true;
+                                    pessoaFutura._valorPagoReal = 0;
+                                }
                                 
                                 const todasPagasNestaConta = contaFutura.pessoas.every(p => p.pago);
                                 contaFutura.pago = todasPagasNestaConta;
@@ -2971,8 +2986,8 @@ function voltarMes() {
                             } else if (saldoRestante > 0) {
                                 // Abater parcialmente
                                 const novoValor = valorOriginal - saldoRestante;
-                                pessoaFutura.valor = novoValor;
                                 compraFutura.valorParcela = novoValor;
+                                recalcularValorPessoa();
                                 saldoRestante = 0;
                                 
                                 adicionarLog(`      Mês ${chaveFutura}: Reduzido para R$ ${novoValor.toFixed(2)}`, 'success');
@@ -2980,8 +2995,8 @@ function voltarMes() {
                         } else {
                             // ===== PAGOU A MENOS: AUMENTAR =====
                             const novoValor = valorOriginal + saldoRestante;
-                            pessoaFutura.valor = novoValor;
                             compraFutura.valorParcela = novoValor;
+                            recalcularValorPessoa();
                             
                             adicionarLog(`      Mês ${chaveFutura}: Aumentado para R$ ${novoValor.toFixed(2)}`, 'warning');
                             
@@ -3511,6 +3526,16 @@ function voltarMes() {
 
         function getChaveMes() {
             return `${mesAtual.getFullYear()}-${String(mesAtual.getMonth() + 1).padStart(2, '0')}`;
+        }
+
+        // CORREÇÃO: evita o artefato clássico de ponto flutuante do JavaScript em
+        // somas monetárias que caem exatamente em meio centavo (ex.: 250.605 ou
+        // 250.615). Sem isso, `.toFixed(2)` pode arredondar para o lado errado
+        // (ex.: 250.605.toFixed(2) === "250.60" ao invés de "250.61"), fazendo o
+        // total exibido variar de forma inconsistente (às vezes ±2 centavos em vez
+        // de ±1) quando um valor de apenas 1 centavo é alterado em alguma compra.
+        function arredondarMoeda(valor) {
+            return Math.round((valor + Number.EPSILON) * 100) / 100;
         }
 
         // ============================================
@@ -10260,10 +10285,11 @@ function adicionarNovaCompra(contaId) {
         }
 
         function calcularTotal(conta) {
-            return conta.pessoas.reduce((sum, p) => {
+            const soma = conta.pessoas.reduce((sum, p) => {
                 const valorConsiderar = p._valorPagoReal !== undefined ? p._valorPagoReal : p.valor;
                 return sum + valorConsiderar;
             }, 0);
+            return arredondarMoeda(soma);
         }
 
         function calcularLimiteDisponivel(conta) {
@@ -12250,10 +12276,7 @@ function mostrarDetalhesValor(contaId) {
             
             lista.innerHTML = contasVisiveis.map((conta, index) => {
                 // CORREÇÃO: Usar calcularTotal que já considera valores alterados
-                const total = conta.pessoas.reduce((sum, p) => {
-                    const valorConsiderar = p._valorPagoReal !== undefined ? p._valorPagoReal : p.valor;
-                    return sum + valorConsiderar;
-                }, 0);
+                const total = calcularTotal(conta);
                 if (conta.pessoas.some(p => p._valorPagoReal !== undefined)) {
                     adicionarLog(`   💰 Conta "${conta.nome}" tem valores alterados`, 'warning');
                     conta.pessoas.forEach(p => {
@@ -12465,14 +12488,9 @@ function mostrarDetalhesValor(contaId) {
             }).join('');
             
             // Calcular total de pagamentos (excluindo recebimentos) usando valores alterados
-            const totalPagamentos = contasVisiveis
+            const totalPagamentos = arredondarMoeda(contasVisiveis
                 .filter(c => c.tipoTransacao !== 'recebimento')
-                .reduce((sum, c) => {
-                    return sum + c.pessoas.reduce((pSum, p) => {
-                        const valorConsiderar = p._valorPagoReal !== undefined ? p._valorPagoReal : p.valor;
-                        return pSum + valorConsiderar;
-                    }, 0);
-                }, 0);
+                .reduce((sum, c) => sum + calcularTotal(c), 0));
             
             document.getElementById('totalValor').textContent = `R$ ${totalPagamentos.toFixed(2)}`;
         }
