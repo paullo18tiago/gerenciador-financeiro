@@ -3556,7 +3556,11 @@ function voltarMes() {
             let anoFatura = hoje.getFullYear();
             let mesFatura = hoje.getMonth(); // 0-indexado
 
-            if (hoje.getDate() > diaFechamento) {
+            if (hoje.getDate() >= diaFechamento) {
+                // CORREÇÃO: usar ">=" em vez de ">". A fatura fecha NO próprio
+                // dia de fechamento (não apenas no dia seguinte), então uma
+                // compra feita exatamente no dia de fechamento já deve entrar
+                // na fatura do mês seguinte, não na fatura atual.
                 // A fatura deste mês já fechou: a compra entra na fatura do mês seguinte
                 mesFatura += 1;
                 if (mesFatura > 11) {
